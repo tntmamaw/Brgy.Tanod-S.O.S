@@ -1,0 +1,8 @@
+{
+  "name": "Brgy.Tanod S.O.S",
+  "description": "Barangay Tanod emergency SOS alert system.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": []
+}

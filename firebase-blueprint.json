@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "Alert": {
+      "title": "Alert",
+      "description": "Emergency alert",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "clientName": { "type": "string" },
+        "phone": { "type": "string" },
+        "gpsAddress": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "clientName", "status", "createdAt"]
+    },
+    "DutyLog": {
+      "title": "DutyLog",
+      "description": "Log of tanod duty",
+      "type": "object",
+      "properties": {
+        "tanodName": { "type": "string" },
+        "dutyDate": { "type": "string", "format": "date" }
+      },
+      "required": ["tanodName", "dutyDate"]
+    },
+    "User": {
+      "title": "User",
+      "description": "System user with role",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string" }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "alerts": {
+      "schema": "Alert",
+      "description": "Collection of emergency alerts"
+    },
+    "dutyLogs": {
+      "schema": "DutyLog",
+      "description": "Collection of duty logs"
+    },
+    "users": {
+        "schema": "User",
+        "description": "Collection of system users"
+    }
+  }
+}
