@@ -3,174 +3,1225 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect } from 'react';
-import { collection, addDoc, onSnapshot, query, orderBy, doc, getDoc, setDoc } from 'firebase/firestore';
-import { GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { db, auth } from './lib/firebase';
-import { DutyLog } from './types';
+import { useState, useEffect, useRef } from 'react';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { 
+  collection, 
+  doc, 
+  getDoc, 
+  setDoc, 
+  onSnapshot, 
+  query, 
+  where, 
+  orderBy, 
+  addDoc,
+  updateDoc,
+  getDocs,
+  limit
+} from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
+import { User, Alert, UserRole, PatrolLocation, EmergencyType, ResidentProfile } from './types';
+import { 
+  Bell, 
+  Shield, 
+  Map as MapIcon, 
+  LogOut, 
+  User as UserIcon, 
+  AlertTriangle, 
+  FileText, 
+  Phone,
+  LayoutDashboard,
+  Clock,
+  Navigation,
+  FileCheck,
+  Plus,
+  Settings as SettingsIcon,
+  X,
+  MapPin,
+  Users
+} from 'lucide-react';
+import { cn } from './lib/utils';
+import { motion, AnimatePresence } from 'motion/react';
+import { Howl } from 'howler';
+import ActiveMap from './components/ActiveMap';
+import LiveMap from './LiveMap';
+import AdminDashboard from './components/AdminDashboard';
+import { Shift } from './types';
+import { format } from 'date-fns';
+import AdminResidents from './components/AdminResidents';
+import PatrolScheduler from './components/PatrolScheduler';
+import RegistrationForm from './components/RegistrationForm';
+import IncidentForm from './components/IncidentForm';
+import { TanodLogo, TanodWordmark, BackgroundPattern, AppIcon } from './components/Branding';
+import { analyzeIncident } from './services/aiService';
+import { db as dexieDb } from './lib/mapDb';
+import { startGPSTracking, calculateDistance } from './services/gpsService';
 
-// Mock data based on the provided design
-const alerts = [
-  { id: 1, title: "Barangay S.o.S Alerted", meta: "Purok 4, Zone B • 2m ago", active: true },
-  { id: 2, title: "Medical Emergency", meta: "122 Mabini St • 14m ago", active: false },
-  { id: 3, title: "Unidentified Intruder", meta: "Public Plaza • 45m ago", active: false },
-];
+// Siren sound
+const siren = new Howl({
+  src: ['https://assets.mixkit.co/active_storage/sfx/1004/1004-preview.mp3'], // Emergency siren
+  loop: true,
+  volume: 0.5,
+});
 
 export default function App() {
-  const [dutyLogs, setDutyLogs] = useState<DutyLog[]>([]);
-  const [newTanodName, setNewTanodName] = useState('');
-  const [user, setUser] = useState<any>(null);
-  const [role, setRole] = useState<string | null>(null);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<User | null>(null);
+  const [residentProfile, setResidentProfile] = useState<ResidentProfile | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-    const unsubscribeAuth = auth.onAuthStateChanged(async (currentUser) => {
-      setUser(currentUser);
-      if (currentUser) {
-        const userRef = doc(db, 'users', currentUser.uid);
-        const userDoc = await getDoc(userRef);
-        
-        let roleToSet = userDoc.exists() ? userDoc.data().role : 'resident';
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+  const [activeTab, setActiveTab] = useState<'home' | 'map' | 'tracker' | 'reports' | 'directory' | 'schedule' | 'residents' | 'roster' | 'settings'>('home');
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [patrols, setPatrols] = useState<PatrolLocation[]>([]);
+  const [isIncidentFormOpen, setIsIncidentFormOpen] = useState(false);
 
-        // Auto-upgrade to admin if email matches
-        if (currentUser.email === 'rubenlleg12@gmail.com' && roleToSet !== 'admin') {
-            await setDoc(userRef, { email: currentUser.email, role: 'admin' }, { merge: true });
-            roleToSet = 'admin';
+  const [isRegistering, setIsRegistering] = useState(false);
+
+  // Live GPS Tracking for active users
+  useEffect(() => {
+    if (user && profile) {
+      const stopTracking = startGPSTracking(user.uid, profile.role as any, (data) => {
+        // Tracker data is handled in Firestore, but we could sync local state here if needed
+      });
+      return () => stopTracking();
+    }
+  }, [user, profile]);
+
+  // Offline Sync Effect
+  useEffect(() => {
+    if (isOnline && user) {
+      const syncAlerts = async () => {
+        try {
+          const pending = await dexieDb.pendingAlerts.toArray();
+          if (pending.length > 0) {
+            console.log(`Syncing ${pending.length} offline alerts...`);
+            for (const alert of pending) {
+              await addDoc(collection(db, 'alerts'), alert.data);
+              await dexieDb.pendingAlerts.delete(alert.id!);
+            }
+          }
+        } catch (err) {
+          console.error("Dexie sync error:", err);
         }
+      };
+      syncAlerts();
+    }
+  }, [isOnline, user]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser) {
+        const isAdminEmail = firebaseUser.email === 'rubenlleg12@gmail.com';
         
-        setRole(roleToSet);
+        // First check if they have a standard user profile
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        
+        if (userDoc.exists()) {
+          setProfile({ id: userDoc.id, ...userDoc.data() } as User);
+        } else if (isAdminEmail) {
+          // Auto-bootstrap master admin
+          const adminProfile: Partial<User> = {
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName || 'Master Admin',
+            email: firebaseUser.email || '',
+            role: 'admin',
+            createdAt: new Date().toISOString(),
+            status: 'approved'
+          };
+          await setDoc(doc(db, 'users', firebaseUser.uid), adminProfile);
+          setProfile(adminProfile as User);
+        } else {
+          setProfile(null);
+        }
+
+        const resDoc = await getDoc(doc(db, 'residents', firebaseUser.uid));
+        if (resDoc.exists()) {
+          setResidentProfile({ id: resDoc.id, ...resDoc.data() } as ResidentProfile);
+        }
       } else {
-        setRole(null);
+        setProfile(null);
+        setResidentProfile(null);
       }
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Different alert queries for residents vs tanods
+    const qBase = collection(db, 'alerts');
+    let alertsQ;
+    
+    if (profile?.role === 'tanod' || profile?.role === 'admin') {
+      alertsQ = query(qBase, where('status', 'in', ['pending', 'responding']), orderBy('timestamp', 'desc'));
+    } else {
+      alertsQ = query(qBase, where('residentId', '==', user.uid), orderBy('timestamp', 'desc'));
+    }
+
+    const unsubAlerts = onSnapshot(alertsQ, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Alert));
+      setAlerts(list);
+      
+      if (list.length > 0 && (profile?.role === 'tanod' || profile?.role === 'admin')) {
+        const hasActive = list.some(a => a.status === 'pending');
+        if (hasActive && !siren.playing()) siren.play();
+        if (!hasActive) siren.stop();
+      } else {
+        siren.stop();
+      }
+    }, (error) => {
+      console.error("Alerts listener error:", error);
     });
 
-    const q = query(collection(db, 'dutyLogs'), orderBy('dutyDate', 'desc'));
-    const unsubscribeLogs = onSnapshot(q, (snapshot) => {
-      const logs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as DutyLog));
-      setDutyLogs(logs);
+    const patrolsQ = query(collection(db, 'patrols'), where('isActive', '==', true));
+    const unsubPatrols = onSnapshot(patrolsQ, (snapshot) => {
+      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PatrolLocation));
+      setPatrols(list);
+    }, (error) => {
+      console.error("Patrols listener error:", error);
     });
 
     return () => {
-      unsubscribeAuth();
-      unsubscribeLogs();
+      unsubAlerts();
+      unsubPatrols();
+      siren.stop();
     };
-  }, []);
+  }, [user, profile?.role]);
 
-  const [authError, setAuthError] = useState<string | null>(null);
+  useEffect(() => {
+    if ((profile?.role !== 'tanod' && profile?.role !== 'admin') || !user) return;
 
-  const login = async () => {
-    setAuthError(null);
+    const watchId = navigator.geolocation.watchPosition(async (pos) => {
+      const location = { 
+        lat: pos.coords.latitude, 
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      };
+      await setDoc(doc(db, 'patrols', user.uid), {
+        tanodId: user.uid,
+        tanodName: profile?.name || user.displayName || 'Officer',
+        location,
+        isActive: true,
+        lastUpdate: new Date().toISOString(),
+      }, { merge: true });
+    }, (err) => console.error(err), { enableHighAccuracy: true });
+
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, [user, profile]);
+
+  const handleLogin = async () => {
+    if (isLoggingIn) return;
+    setIsLoggingIn(true);
     const provider = new GoogleAuthProvider();
     try {
-      await signInWithPopup(auth, provider);
+      return await signInWithPopup(auth, provider);
     } catch (error: any) {
-      console.error("Login failed:", error);
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
-        setAuthError("Sign-in popup was closed. Please try again.");
+        console.info('Login was cancelled by the user.');
       } else {
-        setAuthError(`Sign-in error: ${error.message}`);
+        console.error("Login failed", error);
       }
+      throw error;
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
-  const addDutyLog = async () => {
-    if (!newTanodName) return;
-    await addDoc(collection(db, 'dutyLogs'), {
-      tanodName: newTanodName,
-      dutyDate: new Date().toISOString().split('T')[0]
-    });
-    setNewTanodName('');
+  const handleDemoResidentLogin = async () => {
+    if (!auth.currentUser) {
+      try {
+        await handleLogin();
+      } catch (error) {
+        return; // User cancelled login
+      }
+    }
+
+    const realUid = auth.currentUser?.uid || 'demo-resident-123';
+    
+    // Mock user for demo purposes
+    const mockUser = {
+      ...(auth.currentUser || {}),
+      uid: realUid,
+      displayName: 'Juan Dela Cruz (Demo)',
+      email: 'juan.demo@example.com',
+      photoURL: 'https://placehold.co/400x400?text=Juan'
+    } as FirebaseUser;
+
+    const mockProfile: User = {
+      id: realUid,
+      uid: realUid,
+      name: 'Juan Dela Cruz (Demo)',
+      email: 'juan.demo@example.com',
+      role: 'resident',
+      createdAt: new Date().toISOString(),
+      status: 'approved',
+      phone: '09123456789'
+    };
+
+    const mockResidentProfile: ResidentProfile = {
+      ...mockProfile,
+      id: realUid,
+      fullName: 'Juan Dela Cruz (Demo)',
+      age: 28,
+      gender: 'Male',
+      dob: '1996-05-20',
+      civilStatus: 'Single',
+      idType: 'PhilSys',
+      idNumber: '1234-5678-9012',
+      idPhotoUrl: 'https://placehold.co/600x400?text=ID+SKIP',
+      selfieUrl: 'https://placehold.co/400x400?text=SELFIE+SKIP',
+      mobileNumber: '09123456789',
+      altContactName: 'Maria Dela Cruz',
+      altContactNumber: '09987654321',
+      houseNumber: 'Blk 12 Lot 5',
+      street: 'Sampaguita St.',
+      householdCount: 4,
+      specialNeeds: 'No',
+      specialNeedsInfo: '',
+      gpsLat: 13.0641,
+      gpsLng: 120.7303,
+      status: 'approved',
+      registeredAt: new Date().toISOString(),
+      uid: realUid
+    };
+
+    setUser(mockUser);
+    setProfile(mockProfile);
+    setResidentProfile(mockResidentProfile);
+    setLoading(false);
   };
 
-  if (!user) {
+  const handleSetRole = async (role: UserRole) => {
+    if (!user) return;
+    const newProfile: Partial<User> = {
+      uid: user.uid,
+      name: user.displayName || 'Anonymous User',
+      email: user.email || '',
+      role: role,
+      createdAt: new Date().toISOString(),
+      status: role === 'resident' ? 'pending' : 'approved'
+    };
+    await setDoc(doc(db, 'users', user.uid), newProfile);
+    setProfile(newProfile as User);
+  };
+
+  if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#0F1115] text-white p-4">
-        <button onClick={login} className="bg-[#FF4B4B] text-white p-4 rounded font-bold mb-4">Login with Google</button>
-        {authError && <p className="text-red-500 text-sm max-w-sm text-center">{authError}</p>}
+      <div className="min-h-screen bg-[#0F1115] flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-[#FF4B4B] border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
+  // If registering, show form
+  if (isRegistering) return <RegistrationForm onCancel={() => setIsRegistering(false)} onComplete={() => { setIsRegistering(false); window.location.reload(); }} />;
+
+  // If no user, show login
+  if (!user) return <LoginView onLogin={handleLogin} onRegister={() => setIsRegistering(true)} isLoggingIn={isLoggingIn} onDemoResident={handleDemoResidentLogin} />;
+
+  // Special case: Resident Portal (Registration Flow)
+  if (user && !profile && !residentProfile) return <RoleSelection onSelect={handleSetRole} onRegister={() => setIsRegistering(true)} />;
+
+  // Resident Pending/Rejected State
+  if (profile?.role === 'resident') {
+    if (profile.status === 'pending') return <PendingApproval user={user} />;
+    if (profile.status === 'rejected') return <RejectedScreen reason={residentProfile?.rejectionReason || 'Documents verification failed.'} />;
+  }
+
+  const items = navItems.filter(item => {
+    if (profile?.role === 'admin') return true;
+    if (profile?.role === 'tanod') {
+      return !['residents', 'settings'].includes(item.id);
+    }
+    // Residents only see Dashboard, Map, Directory, Settings
+    return ['home', 'map', 'directory', 'settings'].includes(item.id);
+  });
+
   return (
-    <div className="min-h-screen bg-[#0F1115] text-white p-8 font-sans">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-[300px,1fr] gap-8">
-        {/* Header */}
-        <header className="md:col-span-2 flex justify-between items-center pb-4 border-b border-[#2D3139]">
-          <div className="text-2xl font-extrabold tracking-tighter text-[#FF4B4B] flex items-center gap-2">
-            <div className="w-3 h-3 bg-[#FF4B4B] rounded-full shadow-[0_0_10px_#FF4B4B] animate-pulse"></div>
-            BRGY. TANOD S.O.S ({role?.toUpperCase()})
+    <div className="min-h-screen bg-[#0F1115] text-white font-sans flex flex-col md:flex-row h-screen overflow-hidden relative">
+      <BackgroundPattern />
+      {/* Mobile Top Bar */}
+      <div className="md:hidden flex items-center justify-between p-4 bg-[#16191F]/80 backdrop-blur-md border-b border-[#2D3139] shrink-0 z-50">
+        <div className="flex items-center gap-2">
+          <TanodLogo size={32} animated={false} />
+          <span className="font-extrabold tracking-tighter text-lg uppercase font-mono">TanodNet AI</span>
+        </div>
+        <button 
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 text-[#8E9299] hover:text-white transition-colors"
+        >
+          {isMobileMenuOpen ? (
+            <Plus className="w-6 h-6 rotate-45" />
+          ) : (
+            <div className="flex flex-col gap-1.5 w-6">
+              <span className="w-full h-0.5 bg-current rounded-full"></span>
+              <span className="w-full h-0.5 bg-current rounded-full"></span>
+              <span className="w-full h-0.5 bg-current rounded-full"></span>
+            </div>
+          )}
+        </button>
+      </div>
+
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Navigation */}
+      <nav className={cn(
+        "fixed inset-y-0 left-0 w-72 bg-[#16191F]/90 backdrop-blur-xl border-r border-[#2D3139] flex flex-col shrink-0 z-50 transition-transform duration-300 md:relative md:translate-x-0 md:w-64",
+        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+      )}>
+        <div className="p-6 pt-8">
+          <TanodWordmark width={200} className="mx-auto" />
+        </div>
+
+        <div className="flex-1 px-4 space-y-1 overflow-y-auto">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                onClick={() => {
+                  setActiveTab(item.id as any);
+                  setIsMobileMenuOpen(false);
+                }}
+                className={cn(
+                  "w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200",
+                  activeTab === item.id 
+                    ? "bg-[#FF4B4B] text-white shadow-[0_0_15px_rgba(255,75,75,0.2)]" 
+                    : "text-[#8E9299] hover:bg-[#252932] hover:text-white"
+                )}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="font-medium">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="p-4 mt-auto border-t border-[#2D3139]">
+          <div className="flex items-center gap-3 p-2 rounded-xl bg-[#0A0C10] mb-4 border border-[#2D3139]">
+            <div className="w-10 h-10 rounded-full bg-[#252932] overflow-hidden flex items-center justify-center border border-[#2D3139] shrink-0">
+              {user.photoURL ? <img src={user.photoURL} referrerPolicy="no-referrer" alt="Profile" className="w-full h-full object-cover" /> : <UserIcon className="w-6 h-6 text-[#8E9299]" />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold truncate">{profile?.name}</p>
+              <p className="text-[10px] text-[#8E9299] uppercase tracking-widest">{profile?.role}</p>
+            </div>
           </div>
-          <div className="bg-[rgba(76,175,80,0.1)] text-[#4CAF50] px-4 py-1 rounded-full text-xs font-semibold uppercase border border-[rgba(76,175,80,0.3)]">
-            System Online: {dutyLogs.length} Tanods Active
+          <button onClick={() => signOut(auth)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[#FF4B4B] hover:bg-[rgba(255,75,75,0.1)] transition-all">
+            <LogOut className="w-5 h-5" />
+            <span className="font-medium">Logout</span>
+          </button>
+        </div>
+      </nav>
+
+      <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 flex flex-col">
+        <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8 shrink-0 relative z-10">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-black italic tracking-tighter uppercase font-mono">{activeTab}</h1>
+            <p className="text-[#8E9299] text-xs font-medium tracking-wide uppercase">TanodNet AI — Barangay Emergency Intelligence System</p>
+          </div>
+          <div className="flex items-center justify-between md:justify-end gap-3">
+            {(profile?.role === 'tanod' || profile?.role === 'admin') && (
+              <button 
+                onClick={() => setIsIncidentFormOpen(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-[#FF4B4B] rounded-xl hover:scale-105 transition-all shadow-lg font-bold text-sm"
+              >
+                <Plus className="w-4 h-4" /> NEW INCIDENT
+              </button>
+            )}
+            <button className="p-2.5 bg-[#16191F] border border-[#2D3139] rounded-xl hover:bg-[#252932] relative">
+              <Bell className="w-5 h-5" />
+              {alerts.length > 0 && <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-[#FF4B4B] border-2 border-[#0F1115] rounded-full"></span>}
+            </button>
           </div>
         </header>
 
-        {/* Sidebar */}
-        <aside className="space-y-4">
-          <h2 className="text-lg">Live Alerts</h2>
-          {alerts.map(alert => (
-            <div key={alert.id} className={`p-4 rounded-[16px] border ${alert.active ? 'bg-[#2D1B1B] border-[#FF4B4B]' : 'bg-[#252932] border-[#2D3139]'} cursor-pointer`}>
-              <div className="font-bold text-sm mb-1">{alert.title}</div>
-              <div className="text-xs text-[#8E9299]">{alert.meta}</div>
-            </div>
-          ))}
-          
-          <div className="mt-8 p-4 bg-[#1A1D23] rounded-[16px] border border-[#2D3139]">
-            <div className="text-xs uppercase text-[#8E9299]">Head Developer/System Owner</div>
-            <div className="text-lg font-bold mt-1">Ruben Llego</div>
-            <div className="mt-4">
-              <p className="text-sm text-[#8E9299] text-center">Contact via Messenger: @ruben.llego.ben</p>
-            </div>
-            <button onClick={() => signOut(auth)} className="text-xs text-[#FF4B4B] mt-4 w-full">Logout</button>
-          </div>
-        </aside>
+        <AnimatePresence mode="wait">
+          <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="flex-1">
+            {activeTab === 'home' && profile && (
+              <DashboardView profile={profile} alerts={alerts} patrols={patrols} onTabChange={setActiveTab} isOnline={isOnline} />
+            )}
+            {activeTab === 'map' && (
+              <div className="h-full min-h-[500px]">
+                <ActiveMap alerts={alerts} patrols={patrols} />
+              </div>
+            )}
+            {activeTab === 'tracker' && (
+              <div className="h-full min-h-[500px] flex flex-col gap-4">
+                <div className="bg-[#16191F] p-4 rounded-xl border border-[#2D3139]">
+                  <h3 className="text-lg font-bold font-mono uppercase">Live GPS Tracker</h3>
+                  <p className="text-xs text-[#8E9299]">Real-time Tanod-to-Citizen streaming via WebSockets/Firebase</p>
+                </div>
+                <LiveMap />
+              </div>
+            )}
+            {activeTab === 'residents' && profile?.role === 'admin' && profile && <AdminResidents profile={profile} />}
+            {activeTab === 'directory' && <DirectoryView />}
+            {activeTab === 'schedule' && profile && <ScheduleView role={profile.role} profile={profile} />}
+            {activeTab === 'reports' && <ReportsView />}
+            {activeTab === 'settings' && <SettingsView />}
+            {activeTab === 'roster' && <TanodRosterView />}
+          </motion.div>
+        </AnimatePresence>
 
-        {/* Bento Grid */}
-        <main className="grid grid-cols-1 md:grid-cols-3 md:grid-rows-3 gap-4 md:h-[600px]">
-          {role === 'admin' && (
-            <div className="md:col-span-2 border-l-4 border-[#FF4B4B] bg-[#1A1D23] rounded-[24px] p-6">
-              <div className="text-xs uppercase text-[#8E9299] tracking-widest mb-3">Tanod Duty Management</div>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newTanodName}
-                  onChange={(e) => setNewTanodName(e.target.value)}
-                  placeholder="Tanod Name"
-                  className="bg-[#252932] text-white p-2 rounded flex-grow"
-                />
-                <button onClick={addDutyLog} className="bg-[#FF4B4B] text-white p-2 px-4 rounded font-bold">Add Tanod</button>
+        {isIncidentFormOpen && profile && (
+          <IncidentForm profile={profile} onClose={() => setIsIncidentFormOpen(false)} />
+        )}
+      </main>
+    </div>
+  );
+}
+
+function RejectedScreen({ reason }: { reason: string }) {
+  return (
+    <div className="min-h-screen bg-[#0F1115] flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-24 h-24 bg-red-500/10 rounded-full flex items-center justify-center mb-8">
+        <X className="w-12 h-12 text-red-500" />
+      </div>
+      <h2 className="text-4xl font-black italic tracking-tighter mb-4 text-white uppercase">Account Rejected</h2>
+      <p className="text-[#8E9299] max-w-md mb-8 text-lg font-medium">We're sorry, but your registration was not approved by the Barangay administration.</p>
+      
+      <div className="bg-[#16191F] border border-[#2D3139] p-6 rounded-3xl w-full max-w-md mb-12">
+        <p className="text-[10px] font-black uppercase text-[#8E9299] tracking-widest mb-2">Reason for rejection</p>
+        <p className="text-white font-bold italic">"{reason}"</p>
+      </div>
+
+      <button 
+        onClick={() => auth.signOut()}
+        className="px-10 py-5 bg-[#252932] text-white font-black italic rounded-2xl hover:bg-[#2D3139] transition-all shadow-xl"
+      >
+        LOGOUT AND TRY AGAIN
+      </button>
+    </div>
+  );
+}
+
+function PendingApproval({ user }: { user: FirebaseUser }) {
+  return (
+    <div className="min-h-screen bg-[#0F1115] flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-24 h-24 bg-amber-500/20 rounded-3xl flex items-center justify-center mb-8 border border-amber-500/50">
+        <Clock className="w-12 h-12 text-amber-500" />
+      </div>
+      <h1 className="text-4xl font-black mb-4">Registration Pending</h1>
+      <p className="text-[#8E9299] max-w-sm mb-12">
+        Your resident account for {user.displayName} is currently under evaluation by the Barangay Admin. You will be notified via SMS once approved.
+      </p>
+      <button onClick={() => signOut(auth)} className="px-8 py-3 bg-[#252932] text-white rounded-xl hover:bg-[#2D3139] transition-all flex items-center gap-2">
+        <LogOut className="w-4 h-4" /> Sign Out
+      </button>
+    </div>
+  );
+}
+
+const navItems = [
+  { id: 'home', label: '📡 Command', icon: LayoutDashboard },
+  { id: 'map', label: '🗺 Map', icon: MapIcon },
+  { id: 'tracker', label: '📍 Live GPS', icon: Navigation },
+  { id: 'residents', label: '👥 Residents', icon: Users },
+  { id: 'roster', label: '👮 Tanods', icon: Shield },
+  { id: 'schedule', label: '📅 Schedule', icon: Clock },
+  { id: 'reports', label: '📜 Reports', icon: FileText },
+  { id: 'directory', label: '🆘 SOS Help', icon: Phone },
+  { id: 'settings', label: '⚙️ Config', icon: SettingsIcon },
+];
+
+function LoginView({ onLogin, onRegister, isLoggingIn, onDemoResident }: { onLogin: () => void, onRegister: () => void, isLoggingIn: boolean, onDemoResident: () => void }) {
+  const handleRegister = async () => {
+    try {
+      await onLogin();
+      onRegister();
+    } catch (error) {
+      console.error('Login failed during registration flow:', error);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#0F1115] flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+      <BackgroundPattern />
+      <TanodLogo size={180} className="mb-8 z-10" />
+      <h1 className="text-5xl font-black tracking-tighter mb-4 text-white z-10 font-mono">BRGY. TANOD S.O.S</h1>
+      <p className="text-[#8E9299] max-w-sm mb-12 text-lg z-10">
+        Community watch in the palm of your hand. Real-time emergency connection for Brgy. residents.
+      </p>
+      <div className="space-y-4 w-full max-w-xs">
+        <button 
+          disabled={isLoggingIn}
+          onClick={onLogin}
+          className="w-full bg-white text-black font-bold py-5 rounded-2xl flex items-center justify-center gap-3 hover:bg-[#E2E2E2] active:scale-95 transition-all shadow-xl disabled:opacity-50"
+        >
+          {isLoggingIn ? (
+            <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+          ) : (
+            <img src="https://www.google.com/favicon.ico" className="w-5 h-5" alt="Google" />
+          )}
+          {isLoggingIn ? 'Connecting...' : 'Login with Google'}
+        </button>
+        <button 
+          disabled={isLoggingIn}
+          onClick={handleRegister}
+          className="w-full bg-[#16191F] border border-[#2D3139] text-white font-bold py-5 rounded-2xl hover:bg-[#252932] transition-all disabled:opacity-50"
+        >
+          Resident Registration
+        </button>
+        <button 
+          disabled={isLoggingIn}
+          onClick={onDemoResident}
+          className="w-full bg-[#FF4B4B] text-white font-bold py-5 rounded-2xl hover:bg-red-700 transition-all shadow-xl disabled:opacity-50 animate-bounce"
+        >
+          ✨ Preview Resident View (Demo)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function RoleSelection({ onSelect, onRegister }: { onSelect: (role: UserRole) => void, onRegister: () => void }) {
+  return (
+    <div className="min-h-screen bg-[#0F1115] flex flex-col items-center justify-center p-6 text-center">
+      <h2 className="text-4xl font-black mb-2">Welcome!</h2>
+      <p className="text-[#8E9299] text-lg mb-12">Who are you in this community?</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl">
+        <RoleCard title="Resident Portal" desc="I want to register my profile or send SOS alerts." icon={UserIcon} onClick={onRegister} />
+        <RoleCard title="Tanod Officer" desc="I respond to emergencies and report incidents." icon={Shield} onClick={() => onSelect('tanod')} />
+      </div>
+    </div>
+  );
+}
+
+function RoleCard({ title, desc, icon: Icon, onClick }: any) {
+  return (
+    <button onClick={onClick} className="p-10 bg-[#16191F] border border-[#2D3139] rounded-[40px] hover:border-[#FF4B4B] hover:bg-[#1A1D23] transition-all text-left group active:scale-95">
+      <div className="w-16 h-16 bg-[#252932] rounded-2xl flex items-center justify-center mb-8 group-hover:bg-[#FF4B4B] transition-colors shadow-lg">
+        <Icon className="w-8 h-8 text-[#8E9299] group-hover:text-white" />
+      </div>
+      <h3 className="text-2xl font-bold mb-3">{title}</h3>
+      <p className="text-[#8E9299] leading-relaxed">{desc}</p>
+    </button>
+  );
+}
+
+function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patrols: PatrolLocation[], isOnline: boolean }) {
+  const [sending, setSending] = useState(false);
+  const [activeAlert, setActiveAlert] = useState<Alert | null>(null);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'alerts'), 
+      where('residentId', '==', profile.uid),
+      orderBy('timestamp', 'desc'),
+      limit(1)
+    );
+    
+    return onSnapshot(q, (snapshot) => {
+      if (!snapshot.empty) {
+        const data = snapshot.docs[0].data() as Omit<Alert, 'id'>;
+        if (data.status !== 'resolved') {
+          setActiveAlert({ id: snapshot.docs[0].id, ...data } as Alert);
+        } else {
+          setActiveAlert(null);
+        }
+      }
+    });
+  }, [profile.uid]);
+
+  const handleSOS = async (type: EmergencyType = 'other') => {
+    const description = prompt("Describe the emergency (e.g. 'Accident near gate' or 'Fire in kitchen'):");
+    if (description === null) return;
+    
+    setSending(true);
+    try {
+      const pos = await new Promise<GeolocationPosition>((res, rej) => 
+        navigator.geolocation.getCurrentPosition(res, rej, { 
+          enableHighAccuracy: true, 
+          timeout: 10000, 
+          maximumAge: 0 
+        })
+      );
+
+      const aiAnalysis = await analyzeIncident(description || `Emergency ${type} alert.`, type);
+      
+      // Smart Dispatch: Find Nearest Tanod
+      let nearestTanodId = null;
+      let nearestTanodName = null;
+      
+      const tanodsSnapshot = await getDocs(query(collection(db, 'tanods'), where('status', '==', 'on-duty')));
+      let minDistance = Infinity;
+      
+      tanodsSnapshot.forEach(doc => {
+        const tData = doc.data();
+        if (tData.lat && tData.lng) {
+          const dist = calculateDistance(
+            pos.coords.latitude, 
+            pos.coords.longitude, 
+            tData.lat, 
+            tData.lng
+          );
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestTanodId = doc.id;
+            nearestTanodName = tData.name;
+          }
+        }
+      });
+      
+      const alertData: Omit<Alert, 'id'> = {
+        residentId: profile?.uid || '',
+        residentName: profile?.name || 'Unknown Resident',
+        residentMobile: profile?.phone,
+        type: aiAnalysis.incidentType.toLowerCase() as any,
+        customMessage: description || undefined,
+        location: { 
+          lat: pos.coords.latitude, 
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        },
+        status: nearestTanodId ? 'responding' : 'pending',
+        timestamp: new Date().toISOString(),
+        respondedBy: nearestTanodName || undefined,
+        aiAnalysis: aiAnalysis
+      };
+      
+      if (isOnline) {
+        const docRef = await addDoc(collection(db, 'alerts'), alertData);
+        if (nearestTanodId) {
+          await updateDoc(doc(db, 'tanods', nearestTanodId), { 
+            status: 'responding',
+            activeAlertId: docRef.id 
+          });
+        }
+      } else {
+        await dexieDb.pendingAlerts.add({
+          data: alertData,
+          timestamp: Date.now()
+        });
+        alert('Offline: SOS saved. Will sync when reconnected.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('SOS failed. Check GPS permissions.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="space-y-8 pb-32 relative">
+      <AnimatePresence>
+        {activeAlert && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="bg-[#16191F]/80 backdrop-blur-xl border border-[#FF4B4B] rounded-[40px] p-6 md:p-8 shadow-[0_0_40px_rgba(255,75,75,0.2)]"
+          >
+            <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="flex items-center gap-6">
+                <div className="w-16 h-16 bg-[#FF4B4B] rounded-full flex items-center justify-center animate-pulse relative">
+                  <TanodLogo size={48} animated={false} className="z-10" />
+                  <div className="absolute inset-0 bg-[#FF4B4B] rounded-full blur-xl opacity-50 animate-ping" />
+                </div>
+                <div>
+                  <h4 className="text-xl font-black italic tracking-tighter text-white uppercase font-mono">Active SOS Alert</h4>
+                  <p className="text-xs text-[#8E9299] font-bold uppercase tracking-widest font-mono">{activeAlert.type} • Sent at {new Date(activeAlert.timestamp).toLocaleTimeString()}</p>
+                </div>
               </div>
-              <div className="mt-4">
-                  {dutyLogs.map(log => (
-                      <div key={log.id} className="text-sm border-b border-[#2D3139] py-1">{log.tanodName} - {log.dutyDate}</div>
-                  ))}
+              
+              <div className="flex-1 max-w-md w-full">
+                <div className="relative h-2 bg-[#2D3139] rounded-full overflow-hidden mb-2">
+                  <motion.div 
+                    initial={{ width: '0%' }}
+                    animate={{ 
+                      width: activeAlert.status === 'pending' ? '33.33%' : 
+                             activeAlert.status === 'responding' ? '66.66%' : '100%' 
+                    }}
+                    className="absolute top-0 left-0 h-full bg-[#FF4B4B]"
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] font-black uppercase tracking-widest">
+                  <span className={activeAlert.status === 'pending' ? 'text-[#FF4B4B]' : 'text-[#8E9299]'}>Sent</span>
+                  <span className={activeAlert.status === 'responding' ? 'text-[#FF4B4B]' : 'text-[#8E9299]'}>Responding</span>
+                  <span className={activeAlert.status === 'resolved' ? 'text-[#FF4B4B]' : 'text-[#8E9299]'}>Resolved</span>
+                </div>
               </div>
+
+              <div className="flex gap-4">
+                <button 
+                  onClick={async () => {
+                    if (confirm('Are you sure you want to cancel this emergency alert?')) {
+                      await updateDoc(doc(db, 'alerts', activeAlert.id), { status: 'cancelled' });
+                    }
+                  }}
+                  className="px-6 py-3 bg-[#252932] text-[#8E9299] text-xs font-black rounded-xl hover:text-white hover:bg-[#2D3139] transition-all uppercase tracking-widest"
+                >
+                  Cancel SOS
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {!activeAlert && (
+        <div className="bg-[#16191F]/40 backdrop-blur-md border border-[#2D3139] rounded-[40px] p-8 md:p-12 relative overflow-hidden">
+          <div className="relative z-10">
+            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-4 italic text-white uppercase font-mono">Ready to Help?</h2>
+            <p className="text-[#8E9299] max-w-md text-lg mb-12 font-medium">Use the button below ONLY in case of real emergency. Tanod will be dispatched immediately.</p>
+            
+            <button 
+              disabled={sending}
+              onClick={() => handleSOS()}
+              className={cn(
+                "w-full aspect-square md:aspect-auto md:h-64 rounded-full md:rounded-[40px] flex flex-col items-center justify-center gap-4 transition-all duration-500 shadow-2xl relative group",
+                sending ? "bg-amber-600 scale-95" : "bg-[#FF4B4B] hover:bg-[#FF3333] hover:shadow-[0_0_60px_rgba(255,75,75,0.4)]"
+              )}
+            >
+              <div className="absolute inset-0 bg-[#FF4B4B] rounded-full filter blur-2xl opacity-20 animate-pulse"></div>
+              <TanodLogo size={120} animated={!sending} className="transition-transform group-hover:scale-110" />
+              <span className="text-3xl font-black italic tracking-tighter text-white font-mono">
+                {sending ? 'SENDING ALERT...' : 'SEND SOS ALERT'}
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!activeAlert && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {(['medical', 'fire', 'crime', 'flood'] as EmergencyType[]).map(type => (
+            <button 
+              key={type}
+              onClick={() => handleSOS(type)}
+              className="p-6 bg-[#16191F] border border-[#2D3139] rounded-3xl hover:bg-[#1A1D23] hover:border-[#FF4B4B] transition-all group"
+            >
+              <div className="w-12 h-12 bg-[#252932] rounded-2xl flex items-center justify-center mb-4 group-hover:bg-[#FF4B4B] transition-colors">
+                <AlertTriangle className="w-6 h-6 text-[#8E9299] group-hover:text-white" />
+              </div>
+              <p className="text-xs font-black uppercase text-[#8E9299] tracking-widest group-hover:text-white uppercase">{type}</p>
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-[#16191F] border border-[#2D3139] rounded-[40px] p-8">
+        <h3 className="font-bold text-xl mb-6 flex items-center gap-2 text-white">
+          <MapIcon className="w-5 h-5 text-[#FF4B4B]" /> LIVE PATROL STATUS
+        </h3>
+        <div className="h-64 rounded-[30px] overflow-hidden border border-[#2D3139]">
+          <ActiveMap alerts={activeAlert ? [activeAlert] : []} patrols={patrols} />
+        </div>
+        <p className="text-[#8E9299] text-xs mt-4 text-center">There are {patrols.length} Tanod units currently patrolling the Barangay.</p>
+      </div>
+
+      <div>
+        <h3 className="font-bold text-xl mb-6 text-white uppercase italic tracking-tighter">Emergency Hotlines</h3>
+        <div className="grid grid-cols-2 gap-4">
+          {[
+            { name: 'PNP', number: '117', color: 'bg-blue-500' },
+            { name: 'FIRE', number: '911', color: 'bg-orange-500' },
+            { name: 'RESCUE', number: '0917-SOS', color: 'bg-[#FF4B4B]' },
+            { name: 'HALL', number: '123-4567', color: 'bg-green-500' },
+          ].map(c => (
+            <button 
+              key={c.name} 
+              onClick={() => window.location.href = `tel:${c.number}`}
+              className="flex flex-col items-center gap-2 p-6 bg-[#16191F] border border-[#2D3139] rounded-[32px] hover:border-white/20 transition-all group"
+            >
+              <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center mb-2 group-hover:scale-110 transition-transform shadow-lg", c.color)}>
+                <Phone className="w-6 h-6 text-white" />
+              </div>
+              <p className="text-[10px] font-black text-[#8E9299] uppercase tracking-widest leading-none">{c.name}</p>
+              <p className="text-sm font-black text-white italic tracking-tighter">{c.number}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <RecentAlerts residentId={profile.uid} />
+    </div>
+  );
+}
+
+function RecentAlerts({ residentId }: { residentId: string }) {
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, 'alerts'),
+      where('residentId', '==', residentId),
+      orderBy('timestamp', 'desc'),
+      limit(5)
+    );
+    return onSnapshot(q, (snap) => {
+      setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Alert)));
+    });
+  }, [residentId]);
+
+  if (alerts.length === 0) return null;
+
+  return (
+    <div className="space-y-6">
+      <h3 className="font-bold text-xl text-white uppercase italic tracking-tighter">My Recent Alerts</h3>
+      <div className="space-y-4">
+        {alerts.map(alert => (
+          <div key={alert.id} className="bg-[#16191F] border border-[#2D3139] p-6 rounded-3xl flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 bg-[#252932] rounded-xl flex items-center justify-center">
+                <AlertTriangle className={cn("w-5 h-5", alert.status === 'pending' ? 'text-red-500' : 'text-[#8E9299]')} />
+              </div>
+              <div>
+                <p className="text-white font-bold text-sm uppercase tracking-tight">{alert.type} Emergency</p>
+                <p className="text-[10px] text-[#8E9299] font-bold uppercase tracking-widest">{new Date(alert.timestamp).toLocaleString()}</p>
+              </div>
+            </div>
+            <span className={cn(
+              "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+              alert.status === 'pending' ? "bg-red-500/10 text-red-500" :
+              alert.status === 'responding' ? "bg-blue-500/10 text-blue-500" :
+              "bg-green-500/10 text-green-500"
+            )}>
+              {alert.status}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardView({ profile, alerts, patrols, onTabChange, isOnline }: { profile: User, alerts: Alert[], patrols: PatrolLocation[], onTabChange: (tab: string) => void, isOnline: boolean }) {
+  if (profile.role === 'resident') return <ResidentDashboard profile={profile} patrols={patrols} isOnline={isOnline} />;
+  if (profile.role === 'tanod' || profile.role === 'admin') return <AdminDashboard profile={profile} onTabChange={onTabChange} />;
+  return <div className="text-center p-12 text-[#8E9299]">Unauthorized Access</div>;
+}
+
+
+function DirectoryView() {
+  const contacts = [
+    { name: 'PNP HOTLINE', number: '117', icon: Shield, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+    { name: 'FIRE STATION', number: '911', icon: AlertTriangle, color: 'text-orange-500', bg: 'bg-orange-500/10' },
+    { name: 'BARANGAY HALL', number: '8-123-4567', icon: Phone, color: 'text-green-500', bg: 'bg-green-500/10' },
+    { name: 'RESCUE', number: '0917-SOS-BRGY', icon: Bell, color: 'text-[#FF4B4B]', bg: 'bg-[rgba(255,75,75,0.1)]' },
+  ];
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {contacts.map(c => {
+        const Icon = c.icon;
+        return (
+          <div key={c.name} className="p-8 bg-[#16191F] border border-[#2D3139] rounded-[40px] flex justify-between items-center hover:border-white/20 transition-all shadow-xl group">
+            <div className="flex items-center gap-6">
+               <div className={cn("p-6 rounded-[30px] group-hover:scale-110 transition-transform", c.bg, c.color)}>
+                  <Icon className="w-8 h-8" />
+               </div>
+               <div>
+                  <h4 className="font-extrabold text-[#8E9299] text-xs tracking-widest">{c.name}</h4>
+                  <p className="text-3xl font-black italic text-white mt-1 tracking-tighter">{c.number}</p>
+               </div>
+            </div>
+            <button 
+              onClick={() => window.location.href = `tel:${c.number}`}
+              className="p-5 bg-white rounded-2xl hover:bg-[#FF4B4B] hover:text-white text-black transition-all active:scale-95 shadow-2xl"
+            >
+               <Phone className="w-8 h-8" />
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TanodRosterView() {
+  const [tanods, setTanods] = useState<User[]>([]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'users'), where('role', '==', 'tanod'));
+    return onSnapshot(q, (snap) => {
+      setTanods(snap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
+    });
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-[#16191F] p-8 rounded-[40px] border border-[#2D3139] flex justify-between items-center">
+        <div>
+          <h2 className="text-3xl font-black italic tracking-tighter uppercase text-white">Tanod Roster</h2>
+          <p className="text-[#8E9299] font-medium">Official Barangay Peacekeeping Force Units</p>
+        </div>
+        <button className="px-8 py-4 bg-[#FF4B4B] text-white font-black italic rounded-xl hover:scale-105 transition-all flex items-center gap-2 text-xs shadow-xl shadow-red-500/20">
+          <Plus className="w-4 h-4" /> ADD UNIT
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {tanods.map((t) => (
+          <div key={t.uid} className="bg-[#16191F]/80 backdrop-blur-md border border-[#2D3139] rounded-[32px] p-6 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-green-500/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2 transition-all group-hover:bg-green-500/10"></div>
+            
+            <div className="flex items-center gap-4 mb-6">
+              <div className="w-14 h-14 bg-[#252932] rounded-2xl flex items-center justify-center border border-[#2D3139] group-hover:border-green-500/30 transition-colors">
+                <TanodLogo size={40} animated={false} />
+              </div>
+              <div>
+                <h4 className="text-xl font-black italic tracking-tighter text-white truncate max-w-[140px] uppercase font-mono">{t.name}</h4>
+                <p className="font-mono text-[#8E9299] text-[10px] uppercase font-bold tracking-widest">{t.id || `TND-${t.uid.slice(0, 4).toUpperCase()}`}</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between items-center p-3 bg-[#0F1115] rounded-xl border border-[#2D3139]">
+                <span className="text-[9px] font-black uppercase text-[#8E9299] tracking-widest">Status</span>
+                <span className="text-[10px] font-black uppercase text-green-500 italic">On-Duty</span>
+              </div>
+              <div className="flex justify-between items-center p-3 bg-[#0F1115] rounded-xl border border-[#2D3139]">
+                <span className="text-[9px] font-black uppercase text-[#8E9299] tracking-widest">Sector</span>
+                <span className="text-[10px] font-black uppercase text-white italic">Zone A</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button className="flex-1 py-3 bg-[#252932] border border-[#2D3139] text-[10px] font-black uppercase tracking-widest text-[#8E9299] hover:text-white rounded-xl transition-all">
+                Profile
+              </button>
+              <button className="flex-1 py-3 bg-[#252932] border border-[#2D3139] text-[10px] font-black uppercase tracking-widest text-[#8E9299] hover:text-white rounded-xl transition-all">
+                History
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScheduleView({ role, profile }: { role: UserRole, profile: User | null }) {
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'shifts'), orderBy('startTime', 'asc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift)));
+      setLoading(false);
+    });
+    return () => unsub();
+  }, []);
+
+  if (role === 'admin') return <PatrolScheduler profile={profile} />;
+
+  return (
+    <div className="bg-[#16191F] border border-[#2D3139] rounded-[40px] p-6 md:p-14 shadow-2xl max-w-5xl">
+      <h3 className="text-2xl md:text-3xl font-black tracking-tight mb-8 md:mb-12 italic border-l-8 border-[#FF4B4B] pl-6 uppercase">Brgy. Patrol Operations</h3>
+      
+      {loading ? (
+        <div className="py-20 text-center animate-pulse text-[#8E9299]">Loading operational data...</div>
+      ) : (
+        <div className="space-y-4 md:space-y-6">
+          {shifts.map((s) => {
+            const isActive = s.status === 'active';
+            return (
+              <div key={s.id} className={cn(
+                "p-6 md:p-10 bg-[#252932] rounded-[32px] md:rounded-[40px] border border-[#2D3139] flex flex-col md:flex-row justify-between items-center gap-6",
+                isActive && "bg-[#1A1D23] border-[#FF4B4B]/30 shadow-[0_0_30px_rgba(255,75,75,0.1)]"
+              )}>
+                <div className="text-center md:text-left flex-1">
+                  <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
+                    <p className={cn("text-[10px] font-black tracking-[0.2em]", isActive ? "text-[#FF4B4B]" : "text-[#8E9299]")}>
+                      {format(new Date(s.startTime), 'HH:mm')} - {format(new Date(s.endTime), 'HH:mm')}
+                    </p>
+                    {isActive && <span className="w-2 h-2 bg-[#FF4B4B] rounded-full animate-ping"></span>}
+                  </div>
+                  <h4 className="text-2xl md:text-3xl font-black tracking-tight mb-2 italic text-white uppercase">{s.sector}</h4>
+                  <p className="text-[#8E9299] font-medium flex items-center justify-center md:justify-start gap-2">
+                    <UserIcon className="w-4 h-4" /> OFFICER {s.tanodName.toUpperCase()}
+                  </p>
+                </div>
+                <div className={cn(
+                  "w-full md:w-auto px-8 py-3 rounded-2xl text-[10px] font-black tracking-widest border border-white/10 text-center",
+                  isActive ? "bg-[#FF4B4B] text-white shadow-lg" : "bg-[#16191F] text-[#8E9299]"
+                )}>
+                  {isActive ? 'PATROLLING NOW' : s.status.toUpperCase()}
+                </div>
+              </div>
+            );
+          })}
+
+          {shifts.length === 0 && (
+            <div className="py-20 text-center text-[#8E9299] italic">
+              No patrol shifts assigned for today.
             </div>
           )}
-          
-          <div className="bg-[#1A1D23] border border-[#2D3139] rounded-[24px] p-6">
-            <div className="text-xs uppercase text-[#8E9299] tracking-widest mb-3">Current Status</div>
-            <div className="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-[#FF9800] text-black">DISPATCHED</div>
-          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-          <div className="md:col-span-2 md:row-span-2 bg-[#1A1D23] border border-[#2D3139] rounded-[24px] p-6">
-            <div className="text-xs uppercase text-[#8E9299] tracking-widest mb-3">Live GPS Location</div>
-            <div className="w-full h-48 md:h-full bg-[#0A0C10] rounded-[16px] relative flex items-center justify-center">
-              <div className="w-5 h-5 bg-[#FF4B4B] rounded-full [clip-path:polygon(0_0,100%_0,50%_100%)] rotate-[-45deg] absolute top-[40%] left-[60%] shadow-[0_0_15px_rgba(255,75,75,0.6)]"></div>
-              <div className="absolute bottom-2 right-2 text-[10px] text-[#444]">14.5995° N, 120.9842° E</div>
+function ReportsView() {
+  const [reports, setReports] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, 'incidents'), orderBy('date', 'desc'));
+    const unsub = onSnapshot(q, (snap) => {
+      setReports(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoading(false);
+    }, (error) => {
+      console.error("Incidents Reports listener error:", error);
+    });
+    return unsub;
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center bg-[#16191F] p-8 rounded-[40px] border border-[#2D3139]">
+        <div>
+          <h2 className="text-3xl font-black italic tracking-tighter uppercase text-white">Incident Log Vault</h2>
+          <p className="text-[#8E9299] text-sm font-medium">Archived incident reports and tanod response logs</p>
+        </div>
+        <button className="px-8 py-4 bg-[#252932] border border-[#2D3139] text-white font-black italic rounded-2xl hover:bg-[#2D3139] transition-all flex items-center gap-2 text-xs">
+          <FileText className="w-4 h-4" /> EXPORT AUDIT
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {reports.map((report) => (
+          <div key={report.id} className="bg-[#16191F] border border-[#2D3139] rounded-[32px] p-8 space-y-6">
+            <div className="flex justify-between items-start">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-[#252932] rounded-2xl flex items-center justify-center border border-[#2D3139]">
+                  <Shield className="w-6 h-6 text-[#FF4B4B]" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-[10px] text-[#FF4B4B] uppercase tracking-[0.2em] mb-1">Incident Report</h4>
+                  <p className="text-xl font-black text-white italic tracking-tighter">{report.type}</p>
+                </div>
+              </div>
+              <span className="px-3 py-1 bg-[#10B981]/10 text-[#10B981] text-[10px] font-black rounded-full uppercase">{report.status}</span>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-5 bg-[#0F1115] rounded-2xl border border-[#2D3139]">
+                <p className="text-[10px] font-black text-[#8E9299] uppercase tracking-widest mb-2">Narrative</p>
+                <p className="text-sm text-white/90 leading-relaxed font-medium">{report.description}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-[#0F1115] rounded-xl border border-[#2D3139]">
+                  <p className="text-[8px] font-black text-[#8E9299] uppercase tracking-widest mb-1">Tanod In-Charge</p>
+                  <p className="text-xs font-bold text-white uppercase">{report.tanodName}</p>
+                </div>
+                <div className="p-4 bg-[#0F1115] rounded-xl border border-[#2D3139]">
+                  <p className="text-[8px] font-black text-[#8E9299] uppercase tracking-widest mb-1">Date & Time</p>
+                  <p className="text-xs font-bold text-white uppercase">{report.date} • {report.time}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-[#2D3139] flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-[#8E9299]" />
+              <p className="text-[10px] font-black text-[#8E9299] uppercase tracking-widest">{report.location}</p>
             </div>
           </div>
+        ))}
 
-          <div className="bg-[#1A1D23] border border-[#2D3139] rounded-[24px] p-6">
-            <div className="text-xs uppercase text-[#8E9299] tracking-widest mb-3">Residential Address</div>
-            <div className="text-lg font-semibold leading-relaxed">Blk 7, Lot 12, Phase 2<br />Brgy. San Jose, Quezon City</div>
+        {reports.length === 0 && !loading && (
+          <div className="col-span-full py-32 text-center bg-[#16191F] border border-dashed border-[#2D3139] rounded-[40px]">
+            <FileText className="w-16 h-16 text-[#8E9299] mx-auto mb-6 opacity-10" />
+            <p className="text-[#8E9299] font-black uppercase tracking-widest">No incident reports filed yet.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SettingsView() {
+  const [brgyName, setBrgyName] = useState('Brgy. San Jose');
+  const [phone, setPhone] = useState('0912-345-6789');
+
+  return (
+    <div className="space-y-6 max-w-2xl mx-auto">
+      <div className="bg-[#16191F] border border-[#2D3139] rounded-[40px] p-8 md:p-12">
+        <h3 className="text-2xl font-black mb-8 italic tracking-tighter uppercase text-white">System Config</h3>
+        
+        <div className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-[#8E9299] tracking-widest ml-1">Barangay Name</label>
+            <input 
+              type="text" 
+              value={brgyName}
+              onChange={(e) => setBrgyName(e.target.value)}
+              className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white focus:border-[#FF4B4B] outline-none" 
+            />
           </div>
 
-          <div className="bg-[#FF4B4B] text-white rounded-[24px] p-6">
-            <div className="text-xs uppercase text-[rgba(255,255,255,0.7)] tracking-widest mb-3">Quick Action</div>
-            <div className="text-2xl font-extrabold">SOUND SIREN</div>
-            <div className="text-xs mt-2">Trigger local community alarm</div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-[#8E9299] tracking-widest ml-1">Barangay Hotline</label>
+            <input 
+              type="text" 
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white focus:border-[#FF4B4B] outline-none" 
+            />
           </div>
-        </main>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-[#8E9299] tracking-widest ml-1">Semaphore API Key (SMS)</label>
+            <input 
+              type="password" 
+              placeholder="••••••••••••••••"
+              className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white focus:border-[#FF4B4B] outline-none" 
+            />
+            <p className="text-[10px] text-[#8E9299] italic">Used for sending automated SMS alerts to residents.</p>
+          </div>
+
+          <div className="pt-6">
+            <button className="w-full py-5 bg-[#FF4B4B] text-white font-black italic rounded-2xl hover:scale-105 transition-all shadow-xl shadow-red-500/20">
+              SAVE CHANGES
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-[#16191F] border border-[#2D3139] rounded-[40px] p-8">
+        <h4 className="text-xs font-black uppercase text-[#8E9299] tracking-widest mb-6">Tanod Unit Controls</h4>
+        <div className="flex gap-4">
+           <button className="flex-1 p-4 bg-[#252932] rounded-2xl border border-[#2D3139] text-xs font-bold hover:bg-[#2D3139] transition-all">
+              BROADCAST SOS SILENT
+           </button>
+           <button className="flex-1 p-4 bg-[#252932] rounded-2xl border border-[#2D3139] text-xs font-bold hover:bg-[#2D3139] transition-all">
+              RESET PATROL SECTORS
+           </button>
+        </div>
       </div>
     </div>
   );

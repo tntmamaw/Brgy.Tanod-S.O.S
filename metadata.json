@@ -1,6 +1,6 @@
 {
-  "name": "Brgy.Tanod S.O.S",
-  "description": "Barangay Tanod emergency SOS alert system.",
+  "name": "TanodNet AI",
+  "description": "Barangay Emergency Intelligence System - Real-time dispatch, AI incident classification, and smart responder tracking.",
   "requestFramePermissions": [
     "geolocation"
   ],
