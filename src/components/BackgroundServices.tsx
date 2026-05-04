@@ -20,51 +20,40 @@ export default function BackgroundServices() {
 
   // 2. Supabase Real-time Listener (The "Tactical Command" Feed)
   useEffect(() => {
-    // A. Incidents Listener
-    const incidentChannel = supabase
-      .channel('incidents-live')
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
+      console.warn('⚡ Tactical Link: Delayed - Supabase credentials not set in environment.');
+      return;
+    }
+
+    const tacticalChannel = supabase
+      .channel('tactical-command')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'report_logs',
-        },
+        { event: '*', schema: 'public', table: 'report_logs' },
         (payload) => {
           console.log('📡 Tactical Update (Logs):', payload.eventType, payload.new || payload.old);
-          
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const data = payload.new as any;
-            const mappedAlert: any = {
+            addAlert({
               id: data.id || data.incident_id,
               type: data.type,
               status: data.status,
               location: { lat: data.location_lat || data.lat, lng: data.location_lng || data.lng },
               timestamp: data.created_at || new Date().toISOString(),
-              residentName: 'Field Unit', 
+              residentName: 'Field Unit',
               residentId: data.uid || 'unknown'
-            };
-            addAlert(mappedAlert);
+            });
           } else if (payload.eventType === 'DELETE') {
             removeAlert(payload.old.id);
           }
         }
       )
-      .subscribe();
-
-    // B. Tanods Listener (Live Patrol Map)
-    const tanodChannel = supabase
-      .channel('tanods-live')
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'tanods',
-        },
+        { event: '*', schema: 'public', table: 'tanods' },
         (payload) => {
           console.log('📡 Tactical Update (Tanods):', payload.eventType, payload.new || payload.old);
-          
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const data = payload.new as any;
             const mappedPatrol: PatrolLocation = {
@@ -78,28 +67,22 @@ export default function BackgroundServices() {
               isActive: true,
               lastUpdate: data.updated_at
             };
-            
-            // Sync to local store
-            setPatrols((prev: PatrolLocation[]) => {
-              const others = prev.filter(p => p.tanodId !== data.id);
-              return [...others, mappedPatrol];
-            });
+            const currentPatrols = (useTanodStore.getState() as any).patrols;
+            const others = currentPatrols.filter((p: any) => p.tanodId !== data.id);
+            setPatrols([...others, mappedPatrol]);
           }
         }
       )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          console.log('✅ Tactical Live Link (Tanods): ACTIVE');
-        }
-        if (status === 'CHANNEL_ERROR') {
-          console.error('❌ Tactical Link Error: Please ensure Realtime/Replication is enabled for "report_logs" and "tanods" tables in Supabase Dashboard.');
-          toast.error('Tactical link unstable. Verify Supabase Replication.', { id: 'supa-error' });
+          console.log('✅ Tactical Live Link: ACTIVE');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          console.error(`❌ Tactical Link Error (${status}): Ensure required tables (report_logs, tanods) have Realtime enabled in Supabase. Check /SUPABASE_SETUP.sql for the required script.`);
         }
       });
 
     return () => {
-      supabase.removeChannel(incidentChannel);
-      supabase.removeChannel(tanodChannel);
+      supabase.removeChannel(tacticalChannel);
     };
   }, [addAlert, removeAlert, setPatrols]);
 

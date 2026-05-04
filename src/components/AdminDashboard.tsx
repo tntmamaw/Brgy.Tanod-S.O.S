@@ -127,6 +127,17 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);
       
+      // Update Tanod status in roster if we know who they are
+      const tanodId = alert.respondedBy || updateData.respondedBy;
+      if (tanodId && tanodId !== 'unknown') {
+        try {
+          const newRosterStatus = status === 'resolved' ? 'On-Duty' : status;
+          await updateDoc(doc(db, 'users', tanodId), { status: newRosterStatus });
+        } catch (e) {
+          console.warn('Failed to update Tanod status from Admin dashboard:', e);
+        }
+      }
+      
       // Log for audit
       await logIncidentAction({ ...alert, ...updateData });
     } catch (error: any) {

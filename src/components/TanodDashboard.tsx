@@ -117,6 +117,17 @@ export default function TanodDashboard({ profile, onTabChange }: { profile: User
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);
 
+      // Update our status in the roster
+      if (profile?.uid) {
+        try {
+          // If resolved, go back to On-Duty, otherwise match alert status
+          const newStatus = updateData.status === 'resolved' ? 'On-Duty' : updateData.status;
+          await updateDoc(doc(db, 'users', profile.uid), { status: newStatus });
+        } catch (e) {
+          console.warn('Failed to update Tanod roster status:', e);
+        }
+      }
+
       // Sync to Supabase (Robust update/insert)
       try {
         await supabase

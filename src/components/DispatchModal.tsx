@@ -37,6 +37,15 @@ export default function DispatchModal({ alert, onClose }: DispatchModalProps) {
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);
 
+      // Update Tanod status in roster
+      try {
+        await updateDoc(doc(db, 'users', selectedTanod), { 
+          status: 'responding' 
+        });
+      } catch (e) {
+        console.warn('Failed to update Tanod status in roster:', e);
+      }
+
       // Sync to Supabase
       try {
         await supabase.from('report_logs').upsert([{
