@@ -474,12 +474,15 @@ export default function App() {
       </nav>
 
       <main className="flex-1 h-full overflow-y-auto p-4 md:p-8 flex flex-col">
-        <header className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8 shrink-0 relative z-10">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-black italic tracking-tighter uppercase font-mono">{activeTab}</h1>
-            <p className="text-[#8E9299] text-xs font-medium tracking-wide uppercase">Brgy.TANOD 🆘 ALERT — Barangay Emergency Intelligence System</p>
+        <header className="flex flex-col md:flex-row md:justify-between items-start md:items-center gap-4 mb-8 shrink-0 relative z-10 w-full">
+          <div className="flex-1 w-full">
+            <div className="flex justify-between items-start w-full">
+              <h1 className="text-2xl md:text-3xl font-black italic tracking-tighter uppercase font-mono">{activeTab}</h1>
+              <span className="text-[10px] font-black tracking-widest text-[#EF4444] uppercase mt-1 text-right mt-1.5 md:mt-2">Brgy.TANOD DashBoard Panel</span>
+            </div>
+            <p className="text-[#8E9299] text-xs font-medium tracking-wide uppercase mt-1">Brgy.TANOD 🆘 ALERT — Barangay Emergency Intelligence System</p>
           </div>
-          <div className="flex items-center justify-between md:justify-end gap-3 flex-wrap">
+          <div className="flex flex-wrap items-center justify-between md:justify-end gap-3 w-full md:w-auto">
             {profile?.role === 'admin' && (
               <div className="flex bg-[#16191F] border border-[#2D3139] rounded-xl overflow-hidden text-[10px] sm:text-xs font-bold mr-0 sm:mr-2 shrink-0">
                 <button 
