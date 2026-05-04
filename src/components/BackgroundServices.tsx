@@ -159,35 +159,33 @@ export default function BackgroundServices() {
 
   // 3. Daily Log Reset Listener (Supabase Broadcast + Mock Scheduler Fallback)
   useEffect(() => {
-    let isMounted = true;
     let mockCleanup = () => {};
-    let channel: any = null;
 
     // Check if Supabase URL is present before trying connection
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (supabaseUrl && !supabaseUrl.includes('placeholder')) {
-      supabase.from('report_logs').select('id').limit(1).then(({ error }) => {
-        if (!isMounted) return;
-        if (error) return; // Silent return, tactical feed will log errors
+    let channel: any = null;
 
-        channel = supabase
-          .channel('system-events')
-          .on('broadcast', { event: 'logs_reset' }, (payload) => {
-            console.log('Daily Log Reset Signal Received:', payload);
-            clearActiveLogs();
-            toast('📋 Daily Log Archived & Reset — 07:00 AM Cycle Complete', {
-              duration: 8000,
-              icon: '📋'
-            });
-          })
-          .subscribe((status, err) => {
-            if (status === 'SUBSCRIBED') {
-              console.log('✅ Supabase Real-time: Connected (System Events)');
-            } else if (status === 'CHANNEL_ERROR') {
+    if (supabaseUrl && !supabaseUrl.includes('placeholder')) {
+      channel = supabase
+        .channel(`system-events-${Math.random().toString(36).substring(2)}`)
+        .on('broadcast', { event: 'logs_reset' }, (payload) => {
+          console.log('Daily Log Reset Signal Received:', payload);
+          clearActiveLogs();
+          toast('📋 Daily Log Archived & Reset — 07:00 AM Cycle Complete', {
+            duration: 8000,
+            icon: '📋'
+          });
+        })
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Supabase Real-time: Connected (System Events)');
+          } else if (status === 'CHANNEL_ERROR') {
+            const is1006 = err?.message?.includes('1006') || err?.code === 1006;
+            if (!is1006) {
               console.error('❌ Supabase Real-time Error (System Events):', err);
             }
-          });
-      });
+          }
+        });
     }
 
     // 2.2 Local Mock Scheduler (Fallback for local dev if Edge Function isn't running)
@@ -200,7 +198,6 @@ export default function BackgroundServices() {
     });
 
     return () => {
-      isMounted = false;
       if (channel) {
         supabase.removeChannel(channel);
       }
