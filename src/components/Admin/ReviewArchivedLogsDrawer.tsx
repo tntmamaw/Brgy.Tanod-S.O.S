@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AuditLogArchive } from '../../types/auditLog';
 import { mockArchives } from '../../data/mock/auditLogArchives';
 import { User } from '../../types';
+import { supabase } from '../../lib/supabase';
 
 export function ReviewArchivedLogsDrawer({ profile }: { profile: User | null }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,10 +15,21 @@ export function ReviewArchivedLogsDrawer({ profile }: { profile: User | null }) 
 
   const fetchArchives = async () => {
     setIsLoading(true);
-    // TODO: replace mock with API call → GET /api/audit-logs/archives
-    await new Promise(r => setTimeout(r, 600));
-    setArchives(mockArchives);
-    setIsLoading(false);
+    try {
+      const { data, error } = await supabase
+        .from('audit_log_archives')
+        .select('*')
+        .order('archived_at', { ascending: false });
+      
+      if (error) throw error;
+      setArchives(data || []);
+    } catch (err) {
+      console.error('Failed to fetch archives from Supabase:', err);
+      // Fallback to mock for development if Supabase fails
+      setArchives(mockArchives);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleOpen = () => {

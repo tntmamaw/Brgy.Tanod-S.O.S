@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs, doc, setDoc } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 import { User, IncidentStatus } from '../types';
 import { X, Send } from 'lucide-react';
 
@@ -39,14 +40,31 @@ export default function IncidentForm({ profile, onClose }: IncidentFormProps) {
         }
       }
 
-      await addDoc(collection(db, 'incidents'), {
+      const incidentId = crypto.randomUUID();
+      const incidentData = {
         ...formData,
+        id: incidentId,
         tanodId: auth.currentUser.uid,
         tanodName: profile.name,
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString(),
         adminOnDuty: adminName
-      });
+      };
+
+      await setDoc(doc(db, 'incidents', incidentId), incidentData);
+
+      // Sync to Supabase
+      try {
+        await supabase.from('incidents').upsert([{
+          id: incidentId,
+          type: formData.type,
+          status: formData.status,
+          tanod_id: auth.currentUser.uid
+        }]);
+      } catch (supaErr) {
+        console.error('Supabase incident sync failed:', supaErr);
+      }
+
       onClose();
     } catch (err) {
       console.error(err);

@@ -4,7 +4,7 @@ import { auth, db } from '../lib/firebase';
 import { MapContainer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Shield, MapPin, Upload, User, Phone, IdCard, Home, Users, CheckCircle, Navigation } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { OfflineTileLayer } from './OfflineTileLayer';
 import { TanodLogo, BackgroundPattern } from './Branding';
@@ -251,25 +251,25 @@ export default function RegistrationForm({ onCancel, onComplete }: { onCancel: (
 
   if (step === 5) {
     return (
-      <div className="min-h-screen bg-[#0F1115] flex items-center justify-center p-6 text-center text-white relative h-screen overflow-hidden">
+      <div className="min-h-screen bg-brand-bg flex items-center justify-center p-6 text-center text-white relative h-screen overflow-hidden">
         <BackgroundPattern />
         <div className="max-w-md w-full animate-in fade-in zoom-in duration-500 relative z-10">
-          <div className="w-24 h-24 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-[0_0_30px_rgba(34,197,94,0.4)]">
+          <div className="w-24 h-24 bg-success rounded-full flex items-center justify-center mx-auto mb-8 shadow-lg">
             <CheckCircle className="w-12 h-12 text-white" />
           </div>
-          <h2 className="text-3xl font-black mb-4 font-mono uppercase italic tracking-tighter">Registration Submitted!</h2>
-          <p className="text-gray-400 mb-8 leading-relaxed font-medium">
-            Your account is under review by the Barangay Admin. You will receive an SMS once approved.
+          <h2 className="text-3xl font-black mb-4 font-mono uppercase italic tracking-tighter shadow-glow-red">REGISTRATION COMPLETE</h2>
+          <p className="text-white/40 mb-8 leading-relaxed font-bold uppercase tracking-widest font-mono text-sm px-4">
+            PHASE 1 SECURED. ACCOUNT UNDER EVALUATION BY BARANGAY COMMAND.
           </p>
-          <div className="bg-[#16191F] p-6 rounded-2xl mb-8 border border-[#2D3139]">
-            <p className="text-xs uppercase tracking-widest text-[#8E9299] mb-1 font-bold">Reference Number</p>
-            <p className="text-2xl font-mono font-black text-white">{successId}</p>
+          <div className="glass-panel p-8 rounded-3xl mb-8 border border-white/5">
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/40 mb-2 font-black font-mono">ENCRYPTED REFERENCE ID</p>
+            <p className="text-xl font-mono font-black text-white italic tracking-tighter">{successId?.toUpperCase()}</p>
           </div>
           <button 
             onClick={onComplete}
-            className="w-full py-4 bg-[#FF4B4B] text-white font-black italic rounded-xl hover:scale-105 transition-all uppercase shadow-xl"
+            className="w-full py-5 bg-emergency text-white font-black italic rounded-2xl hover:scale-[1.02] active:scale-95 transition-all uppercase shadow-glow-red font-mono tracking-widest"
           >
-            Back to Login
+            RETURN TO COMMAND
           </button>
         </div>
       </div>
@@ -277,26 +277,31 @@ export default function RegistrationForm({ onCancel, onComplete }: { onCancel: (
   }
 
   return (
-    <div className="min-h-screen bg-[#0F1115] text-white p-6 md:p-12 font-sans overflow-x-hidden relative">
+    <div className="min-h-screen bg-brand-bg text-white p-6 md:p-12 font-sans overflow-x-hidden relative pb-20">
       <BackgroundPattern />
       <div className="max-w-4xl mx-auto relative z-10">
-        <div className="flex items-center gap-4 mb-12">
-          <TanodLogo size={48} />
+        <div className="flex items-center gap-6 mb-16">
+          <div className="relative">
+            <div className="absolute inset-0 bg-emergency/20 blur-xl rounded-full" />
+            <TanodLogo size={56} className="relative z-10 drop-shadow-[0_0_10px_rgba(255,75,75,0.5)]" />
+          </div>
           <div>
-            <h1 className="text-3xl font-black tracking-tighter uppercase font-mono italic">Brgy. Tanod S.O.S</h1>
-            <p className="text-[#8E9299] font-black uppercase text-[10px] tracking-widest">Resident Registration Portal</p>
+            <h1 className="text-3xl font-black tracking-tighter uppercase font-mono italic leading-none">Brgy. <span className="text-emergency">Tanod</span> S.O.S</h1>
+            <p className="text-white/30 font-black uppercase text-[9px] tracking-[0.4em] mt-2 font-mono">Resident Enrollment Protocol • 4.2.0</p>
           </div>
         </div>
 
         {/* Progress Tracker */}
-        <div className="flex justify-between mb-12 relative">
-          <div className="absolute top-1/2 left-0 w-full h-[2px] bg-[#1e293b] -translate-y-1/2 z-0"></div>
+        <div className="flex justify-between mb-16 relative">
+          <div className="absolute top-1/2 left-0 w-full h-[1px] bg-white/5 -translate-y-1/2 z-0"></div>
           {[1, 2, 3, 4].map(i => (
             <div 
               key={i}
               className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center z-10 font-bold transition-all duration-300",
-                step >= i ? "bg-[#dc2626] text-white shadow-[0_0_15px_rgba(220,38,38,0.5)]" : "bg-[#1e293b] text-gray-500"
+                "w-12 h-12 rounded-2xl flex items-center justify-center z-10 font-black transition-all duration-500 font-mono italic text-lg",
+                step >= i 
+                  ? "bg-emergency text-white shadow-glow-red border border-emergency/50 rotate-0" 
+                  : "bg-brand-card text-white/20 border border-white/5 rotate-0"
               )}
             >
               {i}
@@ -304,69 +309,75 @@ export default function RegistrationForm({ onCancel, onComplete }: { onCancel: (
           ))}
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-[#16191F]/80 backdrop-blur-md rounded-[40px] p-8 md:p-12 shadow-2xl border border-[#2D3139] animate-in slide-in-from-bottom-4 duration-500">
+        <form onSubmit={handleSubmit} className="glass-panel border-white/5 rounded-[48px] p-8 md:p-14 shadow-command animate-in slide-in-from-bottom-8 duration-700">
           {step === 1 && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-black italic tracking-tighter uppercase font-mono flex items-center gap-3">
-                  <User className="w-6 h-6 text-[#FF4B4B]" />
-                  Personal Information
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <h2 className="text-2xl font-black italic tracking-tighter uppercase font-mono flex items-center gap-4 text-white">
+                  <div className="w-10 h-10 rounded-xl bg-info/10 border border-info/30 flex items-center justify-center">
+                    <User className="w-6 h-6 text-info" />
+                  </div>
+                  Personal Dossier
                 </h2>
                 <button 
                   type="button" 
                   onClick={fillDemoData}
-                  className="text-[10px] font-black uppercase tracking-widest bg-white/5 hover:bg-white/10 text-white px-4 py-2 rounded-full border border-white/5 transition-all"
+                  className="text-[9px] font-black uppercase tracking-[0.3em] bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-5 py-3 rounded-2xl border border-white/5 transition-all font-mono"
                 >
-                  ✨ Fill Demo Data
+                  ⚡ Autofill Intelligence
                 </button>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-[#8E9299] ml-1">Full Name</label>
-                  <input required placeholder="Juan Dela Cruz" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full bg-[#0F1115] border border-[#2D3139] rounded-xl p-4 focus:border-[#FF4B4B] outline-none text-white font-medium" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Legal Full Name</label>
+                  <input required placeholder="Enter full name" value={formData.fullName} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-[#8E9299] ml-1">Age</label>
-                  <input type="number" required placeholder="25" value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} className="w-full bg-[#0F1115] border border-[#2D3139] rounded-xl p-4 focus:border-[#FF4B4B] outline-none text-white font-medium" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Current Age</label>
+                  <input type="number" required placeholder="00" value={formData.age} onChange={e => setFormData({...formData, age: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-[#8E9299] ml-1">Gender</label>
-                  <select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})} className="w-full bg-[#0F1115] border border-[#2D3139] rounded-xl p-4 focus:border-[#FF4B4B] outline-none appearance-none text-white font-medium">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Biological Sex</label>
+                  <select value={formData.gender} onChange={e => setFormData({...formData, gender: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none appearance-none text-white font-bold font-mono transition-all">
                     <option>Male</option>
                     <option>Female</option>
                     <option>Other</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-[#8E9299] ml-1">Date of Birth</label>
-                  <input type="date" required value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} className="w-full bg-[#0F1115] border border-[#2D3139] rounded-xl p-4 focus:border-[#FF4B4B] outline-none text-white font-medium" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Date of Birth</label>
+                  <input type="date" required value={formData.dob} onChange={e => setFormData({...formData, dob: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono transition-all" />
                 </div>
               </div>
-              <button type="button" onClick={() => setStep(2)} className="w-full md:w-auto px-12 py-4 bg-[#FF4B4B] text-white font-black italic rounded-xl hover:scale-105 transition-all text-xs tracking-widest shadow-xl shadow-red-500/20 uppercase">NEXT STEP</button>
+              <div className="pt-6">
+                <button type="button" onClick={() => setStep(2)} className="w-full md:w-auto px-16 py-5 bg-emergency text-white font-black italic rounded-2xl hover:scale-[1.02] active:scale-95 transition-all text-xs tracking-[0.3em] shadow-glow-red uppercase font-mono">PROCEED TO SEC-2</button>
+              </div>
             </div>
           )}
 
           {step === 2 && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold flex items-center gap-3">
-                <IdCard className="w-6 h-6 text-[#dc2626]" />
-                Identification & Contacts
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <h2 className="text-2xl font-black italic tracking-tighter uppercase font-mono flex items-center gap-4 text-white">
+                <div className="w-10 h-10 rounded-xl bg-info/10 border border-info/30 flex items-center justify-center">
+                  <IdCard className="w-6 h-6 text-info" />
+                </div>
+                ID & COMMUNICATIONS
               </h2>
 
-              <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-4 flex gap-4 items-center">
-                <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center shrink-0">
-                  <Shield className="w-5 h-5 text-blue-400" />
+              <div className="bg-info/5 border border-info/20 rounded-3xl p-6 flex gap-6 items-center">
+                <div className="w-12 h-12 bg-info/20 rounded-2xl flex items-center justify-center shrink-0">
+                  <Shield className="w-6 h-6 text-info" />
                 </div>
-                <div className="text-xs">
-                  <p className="font-bold text-blue-400 uppercase tracking-widest mb-1 leading-none">Storage Bypass Active</p>
-                  <p className="text-gray-400 leading-relaxed">Government ID and Selfie uploads are skipped to save storage costs. Details are optional but recommended.</p>
+                <div className="min-w-0">
+                  <p className="font-black text-info uppercase tracking-[0.2em] mb-1 font-mono text-[10px]">Transmission Bypass Active</p>
+                  <p className="text-white/40 text-[11px] font-bold leading-relaxed font-mono">SECURE IMAGE STORAGE IS CURRENTLY RESTRICTED TO SYSTEM ADMINS. UPLOADS ARE OPTIONAL IN CURRENT FIRMWARE VERSION.</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">ID Type (Optional)</label>
-                  <select value={formData.idType} onChange={e => setFormData({...formData, idType: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Government ID Type</label>
+                  <select value={formData.idType} onChange={e => setFormData({...formData, idType: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono transition-all">
                     <option value="">No ID / Skip for now</option>
                     <option>PhilSys</option>
                     <option>Voter's ID</option>
@@ -377,43 +388,45 @@ export default function RegistrationForm({ onCancel, onComplete }: { onCancel: (
                     <option>Barangay ID</option>
                   </select>
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">ID Number (Optional)</label>
-                  <input placeholder="XXXX-XXXX-XXXX" value={formData.idNumber} onChange={e => setFormData({...formData, idNumber: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">ID Reference Number</label>
+                  <input placeholder="XXXX-XXXX-XXXX" value={formData.idNumber} onChange={e => setFormData({...formData, idNumber: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">Mobile Number</label>
-                  <input required placeholder="09123456789" value={formData.mobileNumber} onChange={e => setFormData({...formData, mobileNumber: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Primary Mobile Terminal</label>
+                  <input required placeholder="09XX-XXX-XXXX" value={formData.mobileNumber} onChange={e => setFormData({...formData, mobileNumber: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">Email Address</label>
-                  <input type="email" placeholder="example@mail.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Emergency Alert Email</label>
+                  <input type="email" placeholder="official@mail.com" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
               </div>
-              <div className="flex gap-4">
-                <button type="button" onClick={() => setStep(1)} className="flex-1 py-4 border border-white/10 font-bold rounded-xl hover:bg-white/5 transition-all">BACK</button>
-                <button type="button" onClick={() => setStep(3)} className="flex-1 py-4 bg-[#dc2626] font-black rounded-xl hover:scale-105 transition-all">NEXT STEP</button>
+              <div className="flex gap-4 pt-6">
+                <button type="button" onClick={() => setStep(1)} className="flex-1 py-5 border border-white/10 font-black rounded-2xl hover:bg-white/5 transition-all uppercase tracking-widest font-mono text-xs">BACK</button>
+                <button type="button" onClick={() => setStep(3)} className="flex-1 py-5 bg-emergency text-white font-black rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-glow-red uppercase tracking-widest font-mono text-xs italic">PROCEED TO SEC-3</button>
               </div>
             </div>
           )}
 
           {step === 3 && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold flex items-center gap-3">
-                <MapPin className="w-6 h-6 text-[#dc2626]" />
-                Home Location
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <h2 className="text-2xl font-black italic tracking-tighter uppercase font-mono flex items-center gap-4 text-white">
+                <div className="w-10 h-10 rounded-xl bg-info/10 border border-info/30 flex items-center justify-center">
+                  <MapPin className="w-6 h-6 text-info" />
+                </div>
+                GEOSPATIAL COORDINATES
               </h2>
-              <div className="space-y-4">
-                <div className="h-72 rounded-3xl overflow-hidden border border-white/10 shadow-inner relative group">
+              <div className="space-y-6">
+                <div className="h-80 rounded-[40px] overflow-hidden border border-white/10 shadow-command relative group">
                   <MapContainer 
                     center={[formData.gpsLat, formData.gpsLng]} 
                     zoom={18} 
-                    className="w-full h-full"
+                    className="w-full h-full grayscale-[0.5] contrast-[1.2] brightness-[0.8]"
                     scrollWheelZoom={false}
                   >
                     <OfflineTileLayer 
                       url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
+                      attribution="&copy; OpenStreetMap"
                     />
                     <MapUpdater center={[formData.gpsLat, formData.gpsLng]} />
                     <LocationPicker 
@@ -425,93 +438,100 @@ export default function RegistrationForm({ onCancel, onComplete }: { onCancel: (
                     />
                   </MapContainer>
                   
-                  <div className="absolute top-4 right-4 z-[1000] bg-[#0a1628]/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-[10px] font-bold text-gray-400">
-                    TAP MAP TO DRAG PIN
+                  <div className="absolute top-6 right-6 z-[1000] glass-panel border-white/20 px-5 py-2 rounded-full text-[9px] font-black text-white uppercase tracking-[0.2em] font-mono shadow-xl">
+                    ADJUST PIN MANUALLY
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <button 
                     type="button" 
                     onClick={detectLocation} 
                     disabled={detecting}
                     className={cn(
-                      "w-full py-4 rounded-2xl flex items-center justify-center gap-3 font-black italic uppercase tracking-widest transition-all shadow-lg",
+                      "w-full py-5 rounded-[24px] flex items-center justify-center gap-4 font-black italic uppercase tracking-[0.4em] transition-all shadow-2xl font-mono text-xs",
                       detecting 
-                        ? "bg-blue-600/50 cursor-wait animate-pulse" 
-                        : "bg-blue-600 hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] shadow-blue-500/20"
+                        ? "bg-info/30 cursor-wait animate-pulse" 
+                        : "bg-info text-white hover:scale-[1.02] active:scale-[0.98] shadow-info/20"
                     )}
                   >
                     {detecting ? (
                       <>
                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        GETTING ACCURATE GPS...
+                        SYNCING GPS ENGINES...
                       </>
                     ) : (
                       <>
-                        <Navigation className="w-5 h-5" /> 📍 PIN MY CURRENT LOCATION
+                        <Navigation className="w-5 h-5" /> PINPOINT MY POSITION
                       </>
                     )}
                   </button>
 
-                  {formData.address && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="bg-white/5 border border-white/10 rounded-2xl p-4 flex gap-3"
-                    >
-                      <MapPin className="w-5 h-5 text-red-500 shrink-0" />
-                      <p className="text-xs text-gray-300 font-medium leading-relaxed">{formData.address}</p>
-                    </motion.div>
-                  )}
+                  <AnimatePresence>
+                    {formData.address && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-brand-bg/50 border border-white/5 rounded-3xl p-6 flex gap-4"
+                      >
+                        <MapPin className="w-6 h-6 text-emergency shrink-0" />
+                        <div className="min-w-0">
+                           <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/30 mb-1 font-mono">Detected Address</p>
+                           <p className="text-xs text-white/80 font-bold leading-relaxed font-mono italic">"{formData.address}"</p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1">
-                     <p className="text-[10px] font-black tracking-widest text-gray-500 uppercase ml-1">Latitude</p>
-                     <input readOnly value={formData.gpsLat.toFixed(6)} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-3 text-sm text-gray-400 font-mono" />
+                <div className="grid grid-cols-2 gap-6 pb-2">
+                   <div className="space-y-2">
+                     <p className="text-[9px] font-black tracking-[0.3em] text-white/20 uppercase ml-2 font-mono">Latitude Ref</p>
+                     <div className="bg-brand-bg/50 border border-white/5 rounded-2xl p-4 text-sm text-white/40 font-mono italic">{formData.gpsLat.toFixed(8)}</div>
                    </div>
-                   <div className="space-y-1">
-                     <p className="text-[10px] font-black tracking-widest text-gray-500 uppercase ml-1">Longitude</p>
-                     <input readOnly value={formData.gpsLng.toFixed(6)} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-3 text-sm text-gray-400 font-mono" />
+                   <div className="space-y-2">
+                     <p className="text-[9px] font-black tracking-[0.3em] text-white/20 uppercase ml-2 font-mono">Longitude Ref</p>
+                     <div className="bg-brand-bg/50 border border-white/5 rounded-2xl p-4 text-sm text-white/40 font-mono italic">{formData.gpsLng.toFixed(8)}</div>
                    </div>
                 </div>
               </div>
-              <div className="flex gap-4">
-                <button type="button" onClick={() => setStep(2)} className="flex-1 py-4 border border-white/10 font-bold rounded-xl hover:bg-white/5 transition-all">BACK</button>
-                <button type="button" onClick={() => setStep(4)} className="flex-1 py-4 bg-[#dc2626] font-black rounded-xl hover:scale-105 transition-all">NEXT STEP</button>
+              <div className="flex gap-4 pt-6">
+                <button type="button" onClick={() => setStep(2)} className="flex-1 py-5 border border-white/10 font-black rounded-2xl hover:bg-white/5 transition-all uppercase tracking-widest font-mono text-xs text-white/60">BACK</button>
+                <button type="button" onClick={() => setStep(4)} className="flex-1 py-5 bg-emergency text-white font-black rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-glow-red uppercase tracking-widest font-mono text-xs italic">PROCEED TO SEC-4</button>
               </div>
             </div>
           )}
 
           {step === 4 && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <h2 className="text-2xl font-bold flex items-center gap-3">
-                <Users className="w-6 h-6 text-[#dc2626]" />
-                Household Info & Account
+            <div className="space-y-8 animate-in fade-in duration-300">
+              <h2 className="text-2xl font-black italic tracking-tighter uppercase font-mono flex items-center gap-4 text-white">
+                <div className="w-10 h-10 rounded-xl bg-info/10 border border-info/30 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-info" />
+                </div>
+                HOUSEHOLD INTERFACE
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">House Number / Street</label>
-                  <input required placeholder="Blk 1 Lot 2" value={formData.houseNumber} onChange={e => setFormData({...formData, houseNumber: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">House / Building No.</label>
+                  <input required placeholder="Enter house number" value={formData.houseNumber} onChange={e => setFormData({...formData, houseNumber: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">Household Members</label>
-                  <input type="number" value={formData.householdCount} onChange={e => setFormData({...formData, householdCount: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Total Occupants</label>
+                  <input type="number" value={formData.householdCount} onChange={e => setFormData({...formData, householdCount: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono transition-all" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">Username</label>
-                  <input required placeholder="juan2024" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Network Handle</label>
+                  <input required placeholder="Assign unique username" value={formData.username} onChange={e => setFormData({...formData, username: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all font-mono italic" />
                 </div>
-                <div className="space-y-2">
-                  <label className="text-xs uppercase tracking-widest text-gray-400 font-bold">Password</label>
-                  <input type="password" required placeholder="********" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-[#0a1628] border border-white/10 rounded-xl p-4 focus:border-[#dc2626] outline-none" />
+                <div className="space-y-3">
+                  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-white/30 ml-2 font-mono">Security Access Key</label>
+                  <input type="password" required placeholder="********" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full bg-brand-bg/50 border border-white/5 rounded-2xl p-5 focus:border-emergency/50 outline-none text-white font-bold font-mono placeholder-white/10 transition-all" />
                 </div>
               </div>
-              <div className="flex gap-4">
-                <button type="button" onClick={() => setStep(3)} className="flex-1 py-4 border border-white/10 font-bold rounded-xl hover:bg-white/5 transition-all">BACK</button>
-                <button type="submit" disabled={loading} className="flex-1 py-4 bg-[#dc2626] font-black rounded-xl hover:scale-105 transition-all disabled:opacity-50">
-                  {loading ? 'SUBMITTING...' : 'COMPLETE REGISTRATION'}
+              <div className="flex gap-4 pt-8">
+                <button type="button" onClick={() => setStep(3)} className="flex-1 py-5 border border-white/10 font-black rounded-2xl hover:bg-white/5 transition-all uppercase tracking-widest font-mono text-xs text-white/60">BACK</button>
+                <button type="submit" disabled={loading} className="flex-2 py-5 bg-emergency text-white font-black italic rounded-2xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 shadow-glow-red uppercase tracking-[0.2em] font-mono text-sm leading-none">
+                  {loading ? 'UPLOADING...' : 'AUTHORIZE ENROLLMENT'}
                 </button>
               </div>
             </div>
