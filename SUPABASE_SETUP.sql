@@ -1,7 +1,13 @@
 -- BRGY. TANOD S.O.S. - SUPABASE TACTICAL LINK SETUP
 -- Run this in your Supabase SQL Editor to enable Real-time and fix "Tactical Link Errors"
 
--- 1. Ensure report_logs table
+-- 0. Enable extensions
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+-- =========================
+-- 1. TABLES
+-- =========================
+
 CREATE TABLE IF NOT EXISTS public.report_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     incident_id TEXT,
@@ -17,9 +23,8 @@ CREATE TABLE IF NOT EXISTS public.report_logs (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Ensure tanods table
 CREATE TABLE IF NOT EXISTS public.tanods (
-    id TEXT PRIMARY KEY, -- Using Auth UID as ID
+    id TEXT PRIMARY KEY, -- Auth UID
     name TEXT,
     location_lat DOUBLE PRECISION,
     location_lng DOUBLE PRECISION,
@@ -29,7 +34,6 @@ CREATE TABLE IF NOT EXISTS public.tanods (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Ensure residents table
 CREATE TABLE IF NOT EXISTS public.residents (
     id TEXT PRIMARY KEY,
     name TEXT,
@@ -45,45 +49,62 @@ CREATE TABLE IF NOT EXISTS public.residents (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Enable Realtime Publication (Idempotent)
--- Checks if publication exists, then adds tables only if they aren't members
-DO $$
+-- =========================
+-- 2. REALTIME CONFIG (CRITICAL)
+-- =========================
+
+-- Enable REPLICA IDENTITY to send full data on updates
+ALTER TABLE public.report_logs REPLICA IDENTITY FULL;
+ALTER TABLE public.tanods REPLICA IDENTITY FULL;
+ALTER TABLE public.residents REPLICA IDENTITY FULL;
+
+-- Ensure Publication Membership
+DO $$ 
 BEGIN
-    -- Ensure publication exists
+    -- Create publication if it doesn't exist
     IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime') THEN
         CREATE PUBLICATION supabase_realtime;
     END IF;
 
-    -- Add report_logs if not already member
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_publication_tables 
-        WHERE pubname = 'supabase_realtime' AND tablename = 'report_logs'
-    ) THEN
+    -- Add tables if not already members
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'report_logs') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.report_logs;
     END IF;
 
-    -- Add tanods if not already member
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_publication_tables 
-        WHERE pubname = 'supabase_realtime' AND tablename = 'tanods'
-    ) THEN
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'tanods') THEN
         ALTER PUBLICATION supabase_realtime ADD TABLE public.tanods;
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND tablename = 'residents') THEN
+        ALTER PUBLICATION supabase_realtime ADD TABLE public.residents;
     END IF;
 END $$;
 
--- 5. Row Level Security Policies
--- In a production app, restrict this to authenticated users. 
--- For the AI Studio demo environment, we enable simple policies.
+-- =========================
+-- 3. RLS (ROW LEVEL SECURITY)
+-- =========================
 
 ALTER TABLE public.report_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tanods ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.residents ENABLE ROW LEVEL SECURITY;
 
--- Drop existing policies to avoid conflicts if re-running
-DROP POLICY IF EXISTS "Public access to report_logs" ON public.report_logs;
-DROP POLICY IF EXISTS "Public access to tanods" ON public.tanods;
-DROP POLICY IF EXISTS "Public access to residents" ON public.residents;
+-- Drop safely
+DO $$ 
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public access to report_logs') THEN
+        DROP POLICY "Public access to report_logs" ON public.report_logs;
+    END IF;
 
+    IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public access to tanods') THEN
+        DROP POLICY "Public access to tanods" ON public.tanods;
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Public access to residents') THEN
+        DROP POLICY "Public access to residents" ON public.residents;
+    END IF;
+END $$;
+
+-- Recreate policies (ALLOW ALL for demo environment)
 CREATE POLICY "Public access to report_logs" ON public.report_logs FOR ALL USING (true);
 CREATE POLICY "Public access to tanods" ON public.tanods FOR ALL USING (true);
 CREATE POLICY "Public access to residents" ON public.residents FOR ALL USING (true);

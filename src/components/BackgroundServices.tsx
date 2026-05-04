@@ -18,68 +18,93 @@ export default function BackgroundServices() {
   const { setPatrols, setShifts } = useTanodStore();
   const { clearActiveLogs } = useLogStore();
 
-  // 2. Supabase Real-time Listener (The "Tactical Command" Feed)
-  useEffect(() => {
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
-      console.warn('⚡ Tactical Link: Delayed - Supabase credentials not set in environment.');
-      return;
-    }
+    // 2. Supabase Real-time Listener (The "Tactical Command" Feed)
+    useEffect(() => {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl || supabaseUrl.includes('placeholder')) {
+        console.warn('⚡ Tactical Link: Delayed - Supabase credentials not set in environment.');
+        return;
+      }
 
-    const tacticalChannel = supabase
-      .channel('tactical-command')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'report_logs' },
-        (payload) => {
-          console.log('📡 Tactical Update (Logs):', payload.eventType, payload.new || payload.old);
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const data = payload.new as any;
-            addAlert({
-              id: data.id || data.incident_id,
-              type: data.type,
-              status: data.status,
-              location: { lat: data.location_lat || data.lat, lng: data.location_lng || data.lng },
-              timestamp: data.created_at || new Date().toISOString(),
-              residentName: 'Field Unit',
-              residentId: data.uid || 'unknown'
-            });
-          } else if (payload.eventType === 'DELETE') {
-            removeAlert(payload.old.id);
+      console.log('📡 Initializing Tactical Live Link...');
+
+      // Connection Test: Try a simple REST fetch to see if URL/Key are valid
+      supabase.from('report_logs').select('id').limit(1).then(({ error }) => {
+        if (error) {
+          console.error('❌ Supabase Connection Test Failed:', error.message);
+          if (error.message.includes('FetchError') || error.message.includes('failed to fetch')) {
+            console.warn('HINT: This usually means VITE_SUPABASE_URL is unreachable or blocked.');
           }
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'tanods' },
-        (payload) => {
-          console.log('📡 Tactical Update (Tanods):', payload.eventType, payload.new || payload.old);
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const data = payload.new as any;
-            const mappedPatrol: PatrolLocation = {
-              id: data.id,
-              tanodId: data.id,
-              tanodName: data.name,
-              location: {
-                lat: data.location_lat || data.lat,
-                lng: data.location_lng || data.lng,
-              },
-              isActive: true,
-              lastUpdate: data.updated_at
-            };
-            const currentPatrols = (useTanodStore.getState() as any).patrols;
-            const others = currentPatrols.filter((p: any) => p.tanodId !== data.id);
-            setPatrols([...others, mappedPatrol]);
-          }
-        }
-      )
-      .subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('✅ Tactical Live Link: ACTIVE');
-        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-          console.error(`❌ Tactical Link Error (${status}): Ensure required tables (report_logs, tanods) have Realtime enabled in Supabase. Check /SUPABASE_SETUP.sql for the required script.`);
+        } else {
+          console.log('✅ Supabase Connection Test: SUCCESS');
         }
       });
+
+      const tacticalChannel = supabase
+        .channel('tactical-command')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'report_logs' },
+          (payload) => {
+            console.log('📡 Tactical Update (Logs):', payload.eventType, payload.new || payload.old);
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const data = payload.new as any;
+              addAlert({
+                id: data.id || data.incident_id,
+                type: data.type,
+                status: data.status,
+                location: { lat: data.location_lat || data.lat, lng: data.location_lng || data.lng },
+                timestamp: data.created_at || new Date().toISOString(),
+                residentName: 'Field Unit',
+                residentId: data.uid || 'unknown'
+              });
+            } else if (payload.eventType === 'DELETE') {
+              removeAlert(payload.old.id);
+            }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'tanods' },
+          (payload) => {
+            console.log('📡 Tactical Update (Tanods):', payload.eventType, payload.new || payload.old);
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const data = payload.new as any;
+              const mappedPatrol: PatrolLocation = {
+                id: data.id,
+                tanodId: data.id,
+                tanodName: data.name,
+                location: {
+                  lat: data.location_lat || data.lat,
+                  lng: data.location_lng || data.lng,
+                },
+                isActive: true,
+                lastUpdate: data.updated_at
+              };
+              const currentPatrols = (useTanodStore.getState() as any).patrols;
+              const others = currentPatrols.filter((p: any) => p.tanodId !== data.id);
+              setPatrols([...others, mappedPatrol]);
+            }
+          }
+        )
+        .subscribe((status, err) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('✅ Tactical Live Link: ACTIVE');
+          } else if (status === 'CHANNEL_ERROR') {
+            const transportError = err?.message?.includes('transport failure');
+            console.error(`❌ Tactical Link Error (CHANNEL_ERROR):`, err);
+            
+            if (transportError) {
+              console.warn('💡 TROUBLESHOOTING: "transport failure" often means the Supabase URL is incorrect or the API key is invalid.');
+              console.warn('👉 IMPORTANT: Do NOT use "Legacy anon" keys. Go to Supabase Dashboard > Settings > API and use the "Publishable key" (from the first tab).');
+              console.warn('👉 Also check: Does VITE_SUPABASE_URL start with https:// and have no trailing slash? Current URL starts with:', import.meta.env.VITE_SUPABASE_URL?.substring(0, 15), '...');
+            } else {
+              console.warn('HINT: Check if "report_logs" and "tanods" tables are in the "supabase_realtime" publication.');
+            }
+          } else if (status === 'TIMED_OUT') {
+            console.warn('⏳ Tactical Link: TIMED_OUT. Retrying in background...');
+          }
+        });
 
     return () => {
       supabase.removeChannel(tacticalChannel);
@@ -129,9 +154,11 @@ export default function BackgroundServices() {
           icon: '📋'
         });
       })
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         if (status === 'SUBSCRIBED') {
           console.log('✅ Supabase Real-time: Connected (System Events)');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('❌ Supabase Real-time Error (System Events):', err);
         }
       });
 
