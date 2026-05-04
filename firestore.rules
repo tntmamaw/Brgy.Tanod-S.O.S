@@ -37,5 +37,9 @@ service cloud.firestore {
     match /{document=**} {
       allow read, write: if isSignedIn();
     }
+    
+    match /test/connection {
+      allow read: if true;
+    }
   }
 }
