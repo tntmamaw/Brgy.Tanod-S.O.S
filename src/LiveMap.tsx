@@ -108,41 +108,60 @@ function MyLocationButton() {
   );
 }
 
-export default function LiveMap() {
-  const [users, setUsers] = useState<Record<string, any>>({});
+import { useIncidentStore } from './store/useIncidentStore';
+import { useTanodStore } from './store/useTanodStore';
 
-  useEffect(() => {
-    // Replace with actual user ID from Auth context if available
-    const stopGPS = startGPS("user123", "citizen", (newData) => {
-      setUsers(prev => ({ ...prev, ...newData }));
-    });
-    return () => stopGPS();
-  }, []);
+export default function LiveMap() {
+  const { alerts } = useIncidentStore();
+  const { patrols } = useTanodStore();
 
   return (
-    <div className="w-full h-full min-h-[400px] rounded-xl overflow-hidden border border-white/10 shadow-2xl relative">
+    <div className="w-full h-full min-h-[400px] rounded-[32px] overflow-hidden border border-white/5 shadow-2xl relative bg-[#0F1115]">
       <MapContainer 
         center={CENTER} 
         zoom={14} 
         style={{ height: "100%", width: "100%" }}
+        className="z-10"
       >
         <OfflineTileLayer
-          attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MyLocationButton />
-        {Object.values(users).map((u: any, i: number) => (
-          u.lat && u.lng && (
+        
+        {/* Active Patrols (Tanods) */}
+        {patrols.map((p) => (
+          p.location?.lat && p.location?.lng && (
             <Marker
-              key={u.user_id || i}
-              position={[u.lat, u.lng]}
-              icon={u.role === "tanod" ? TanodIcon : CitizenIcon}
+              key={p.tanodId}
+              position={[p.location.lat, p.location.lng]}
+              icon={TanodIcon}
             >
               <Popup>
-                <div className="text-black">
-                  <strong>{u.role?.toUpperCase()}</strong><br />
-                  ID: {u.user_id}<br />
-                  Time: {new Date(u.timestamp).toLocaleTimeString()}
+                <div className="text-[#0F1115] p-2">
+                  <p className="font-black italic uppercase tracking-tighter text-sm mb-1"> OFFICER 👮</p>
+                  <p className="font-bold text-xs">{p.tanodName}</p>
+                  <p className="text-[10px] text-gray-500 mt-1">Last seen: {new Date(p.lastUpdate).toLocaleTimeString()}</p>
+                </div>
+              </Popup>
+            </Marker>
+          )
+        ))}
+
+        {/* SOS Alerts */}
+        {alerts.map((a) => (
+          a.location?.lat && a.location?.lng && (
+            <Marker
+              key={a.id}
+              position={[a.location.lat, a.location.lng]}
+              icon={CitizenIcon}
+            >
+              <Popup>
+                <div className="text-[#0F1115] p-2">
+                  <p className="font-black italic uppercase tracking-tighter text-red-600 text-sm mb-1"> EMERGENCY 🆘</p>
+                  <p className="font-bold text-xs">{a.type.toUpperCase()}</p>
+                  <p className="text-xs">{a.residentName}</p>
+                  <p className="text-[10px] text-gray-500 mt-1 font-mono">{new Date(a.timestamp).toLocaleString()}</p>
                 </div>
               </Popup>
             </Marker>

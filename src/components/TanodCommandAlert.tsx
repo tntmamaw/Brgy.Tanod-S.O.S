@@ -13,43 +13,38 @@ const siren = new Howl({
   volume: 0.8,
 });
 
-export default function TanodCommandAlert({ profile }: { profile: User }) {
-  const [pendingShifts, setPendingShifts] = useState<Shift[]>([]);
+import { useTanodStore } from '../store/useTanodStore';
+
+export default function TanodCommandAlert({ profile, isTestMode }: { profile: User, isTestMode?: boolean }) {
+  const { shifts } = useTanodStore();
   const [activeAlert, setActiveAlert] = useState<Shift | null>(null);
 
-  useEffect(() => {
-    if (profile.role !== 'tanod') return;
-
-    const q = query(
-      collection(db, 'shifts'),
-      where('tanodId', '==', profile.uid),
-      where('tanodResponse', '==', 'pending')
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-      const shifts = snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift));
-      setPendingShifts(shifts);
-    });
-
-    return () => unsub();
-  }, [profile]);
+  const pendingShifts = shifts.filter(s => {
+    const isTarget = isTestMode || s.tanodId === profile.uid;
+    return isTarget && s.tanodResponse === 'pending';
+  });
 
   useEffect(() => {
     if (pendingShifts.length > 0 && !activeAlert) {
-      const shift = pendingShifts[0];
-      setActiveAlert(shift);
-      
-      // Play siren for 3 seconds
-      siren.play();
-      const sirenTimeout = setTimeout(() => {
-        siren.stop();
-      }, 3000);
-
-      return () => clearTimeout(sirenTimeout);
+      setActiveAlert(pendingShifts[0]);
     } else if (pendingShifts.length === 0 && activeAlert) {
       setActiveAlert(null);
     }
   }, [pendingShifts, activeAlert]);
+
+  useEffect(() => {
+    if (activeAlert) {
+      siren.play();
+      const timeout = setTimeout(() => {
+        siren.stop();
+      }, 3000);
+      
+      return () => {
+        clearTimeout(timeout);
+        siren.stop();
+      };
+    }
+  }, [activeAlert]);
 
   const handleResponse = async (shiftId: string, response: 'accepted' | 'rejected') => {
     try {

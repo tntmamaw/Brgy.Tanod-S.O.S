@@ -55,6 +55,7 @@ import AdminDashboard from './components/AdminDashboard';
 import TanodDashboard from './components/TanodDashboard';
 import { Shift } from './types';
 import { format } from 'date-fns';
+import { queueSOS } from './lib/offlineQueue';
 import AdminResidents from './components/AdminResidents';
 import PatrolScheduler from './components/PatrolScheduler';
 import RegistrationForm from './components/RegistrationForm';
@@ -75,14 +76,26 @@ const siren = new Howl({
 });
 
 import TanodCommandAlert from './components/TanodCommandAlert';
+import BackgroundServices from './components/BackgroundServices';
+import { useAuthStore } from './store/useAuthStore';
+import { useIncidentStore } from './store/useIncidentStore';
+import { useTanodStore } from './store/useTanodStore';
 
 export default function App() {
+  const { 
+    profile, 
+    setProfile, 
+    residentProfile, 
+    setResidentProfile, 
+    isLoading: loading, 
+    setIsLoading: setLoading 
+  } = useAuthStore();
+  const { alerts } = useIncidentStore();
+  const { patrols } = useTanodStore();
+  
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const [profile, setProfile] = useState<User | null>(null);
-  const [residentProfile, setResidentProfile] = useState<ResidentProfile | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
@@ -96,8 +109,6 @@ export default function App() {
     };
   }, []);
   const [activeTab, setActiveTab] = useState<'home' | 'map' | 'tracker' | 'reports' | 'directory' | 'schedule' | 'residents' | 'roster' | 'settings'>('home');
-  const [alerts, setAlerts] = useState<Alert[]>([]);
-  const [patrols, setPatrols] = useState<PatrolLocation[]>([]);
   const [isIncidentFormOpen, setIsIncidentFormOpen] = useState(false);
 
   const [isRegistering, setIsRegistering] = useState(false);
@@ -110,50 +121,6 @@ export default function App() {
     role: effectiveRole as 'admin' | 'tanod' | 'resident',
     name: isRuben ? 'RubenLlego' : profile.name
   } : null;
-
-  // Live GPS Tracking for active users
-  useEffect(() => {
-    if (user && profile) {
-      const stopTracking = startGPSTracking(user.uid, profile.role as any, (data) => {
-        // Tracker data is handled in Firestore, but we could sync local state here if needed
-      });
-      return () => stopTracking();
-    }
-  }, [user, profile]);
-
-  // Daily Audit Log Archive Scheduler
-  useEffect(() => {
-    const unsub = scheduleDailyLogReset((archivedDate) => {
-      // In a real app we'd clear the Zustand store or active logs slice here
-      // useLogStore.getState().clearActiveLogs();
-      toast.success(`📋 Daily Log Archived & Reset — 07:00 AM Cycle Complete (${archivedDate})`, {
-        duration: 8000,
-        position: 'top-center'
-      });
-    });
-    return () => unsub();
-  }, []);
-
-  // Offline Sync Effect
-  useEffect(() => {
-    if (isOnline && user) {
-      const syncAlerts = async () => {
-        try {
-          const pending = await dexieDb.pendingAlerts.toArray();
-          if (pending.length > 0) {
-            console.log(`Syncing ${pending.length} offline alerts...`);
-            for (const alert of pending) {
-              await addDoc(collection(db, 'alerts'), alert.data);
-              await dexieDb.pendingAlerts.delete(alert.id!);
-            }
-          }
-        } catch (err) {
-          console.error("Dexie sync error:", err);
-        }
-      };
-      syncAlerts();
-    }
-  }, [isOnline, user]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -196,78 +163,22 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    // Alert sound logic for Tanods
+    if (!profile || (profile.role !== 'tanod' && profile.role !== 'admin')) return;
 
-    // Different alert queries for residents vs tanods
-    const qBase = collection(db, 'alerts');
-    let alertsQ;
-    
-    if (profile?.role === 'tanod' || profile?.role === 'admin') {
-      alertsQ = query(qBase, where('status', 'in', ['pending', 'responding']));
-    } else {
-      alertsQ = query(qBase, where('residentId', '==', user.uid));
-    }
-
-    const unsubAlerts = onSnapshot(alertsQ, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Alert));
-      // Sort in memory to avoid missing index errors
-      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      
-      setAlerts(list);
-      
-      if (list.length > 0 && (profile?.role === 'tanod' || profile?.role === 'admin')) {
-        const hasActive = list.some(a => a.status === 'pending');
-        if (hasActive) {
-          if (!siren.playing()) {
-            siren.volume(1.0);
-            siren.play();
-            setTimeout(() => { siren.stop(); }, 10000);
-          }
-        } else {
-          siren.stop();
-        }
-      } else {
-        siren.stop();
+    const hasActive = alerts.some(a => a.status === 'pending');
+    if (hasActive) {
+      if (!siren.playing()) {
+        siren.volume(1.0);
+        siren.play();
+        setTimeout(() => { siren.stop(); }, 10000);
       }
-    }, (error) => {
-      console.error("Alerts listener error:", error);
-    });
-
-    const patrolsQ = query(collection(db, 'patrols'), where('isActive', '==', true));
-    const unsubPatrols = onSnapshot(patrolsQ, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PatrolLocation));
-      setPatrols(list);
-    }, (error) => {
-      console.error("Patrols listener error:", error);
-    });
-
-    return () => {
-      unsubAlerts();
-      unsubPatrols();
+    } else {
       siren.stop();
-    };
-  }, [user, profile?.role]);
-
-  useEffect(() => {
-    if ((profile?.role !== 'tanod' && profile?.role !== 'admin') || !user) return;
-
-    const watchId = navigator.geolocation.watchPosition(async (pos) => {
-      const location = { 
-        lat: pos.coords.latitude, 
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      };
-      await setDoc(doc(db, 'patrols', user.uid), {
-        tanodId: user.uid,
-        tanodName: profile?.name || user.displayName || 'Officer',
-        location,
-        isActive: true,
-        lastUpdate: new Date().toISOString(),
-      }, { merge: true });
-    }, (err) => console.error(err), { enableHighAccuracy: true });
-
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, [user, profile]);
+    }
+    
+    return () => siren.stop();
+  }, [alerts, profile?.role]);
 
   const handleLogin = async () => {
     if (isLoggingIn) return;
@@ -585,6 +496,8 @@ export default function App() {
         {isIncidentFormOpen && effectiveProfile && (
           <IncidentForm profile={effectiveProfile} onClose={() => setIsIncidentFormOpen(false)} />
         )}
+        {effectiveProfile && effectiveRole === 'tanod' && <TanodCommandAlert profile={effectiveProfile} isTestMode={viewOverride === 'tanod'} />}
+        <BackgroundServices />
       </main>
     </div>
   );
@@ -751,74 +664,57 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
     setSosDescription('');
     setSending(true);
     try {
-      const pos = await new Promise<GeolocationPosition>((res, rej) => 
-        navigator.geolocation.getCurrentPosition(res, rej, { 
-          enableHighAccuracy: true, 
-          timeout: 10000, 
-          maximumAge: 0 
-        })
-      );
+      // 1. Get GPS with fallback
+      let pos: GeolocationPosition | null = null;
+      try {
+        pos = await new Promise<GeolocationPosition>((res, rej) => 
+          navigator.geolocation.getCurrentPosition(res, rej, { 
+            enableHighAccuracy: true, 
+            timeout: 5000, 
+            maximumAge: 0 
+          })
+        );
+      } catch (gpsErr) {
+        console.warn('GPS failed, proceeding with empty location', gpsErr);
+      }
 
-      const aiAnalysis = await analyzeIncident(description || `Emergency ${type} alert.`, type);
+      // 2. AI Analysis (optional for speed)
+      let aiAnalysis = { incidentType: type, severity: 'high', priority: 1, action: 'dispatch' };
+      try {
+        aiAnalysis = await analyzeIncident(description || `Emergency ${type} alert.`, type) as any;
+      } catch (aiErr) {
+        console.warn('AI analysis failed', aiErr);
+      }
       
-      // Smart Dispatch: Find Nearest Tanod
-      let nearestTanodId = null;
-      let nearestTanodName = null;
-      
-      const tanodsSnapshot = await getDocs(query(collection(db, 'tanods'), where('status', '==', 'on-duty')));
-      let minDistance = Infinity;
-      
-      tanodsSnapshot.forEach(doc => {
-        const tData = doc.data();
-        if (tData.lat && tData.lng) {
-          const dist = calculateDistance(
-            pos.coords.latitude, 
-            pos.coords.longitude, 
-            tData.lat, 
-            tData.lng
-          );
-          if (dist < minDistance) {
-            minDistance = dist;
-            nearestTanodId = doc.id;
-            nearestTanodName = tData.name;
-          }
-        }
-      });
-      
-      const locationObj: any = { 
+      const locationObj: any = pos ? { 
         lat: pos.coords.latitude, 
-        lng: pos.coords.longitude
-      };
-      if (pos.coords.accuracy) locationObj.accuracy = pos.coords.accuracy;
+        lng: pos.coords.longitude,
+        accuracy: pos.coords.accuracy
+      } : { lat: 0, lng: 0 }; // Fallback to placeholder or last known if we had a persistent state
 
       const alertData: any = {
         residentId: profile?.uid || '',
         residentName: profile?.name || 'Unknown Resident',
-        type: aiAnalysis.incidentType.toLowerCase() as any,
+        type: (aiAnalysis.incidentType?.toLowerCase() || type) as any,
         location: locationObj,
-        status: 'pending', // Always start as pending so the siren activates!
+        status: 'pending',
         timestamp: new Date().toISOString(),
         aiAnalysis: aiAnalysis
       };
       
       if (profile?.phone) alertData.residentMobile = profile.phone;
       if (description) alertData.customMessage = description;
-      if (nearestTanodId) alertData.assignedTo = nearestTanodId;
       
+      // 3. Offline-Aware Save
       if (isOnline) {
-        const docRef = await addDoc(collection(db, 'alerts'), alertData);
-        // We do NOT automatically set the tanod to responding. We want them to accept it!
-        // The nearest tanod is just 'assignedTo' as a suggestion.
+        await addDoc(collection(db, 'alerts'), alertData);
       } else {
-        await dexieDb.pendingAlerts.add({
-          data: alertData,
-          timestamp: Date.now()
-        });
-        alert('Offline: SOS saved. Will sync when reconnected.');
+        queueSOS(alertData);
+        toast.error('Offline Mode: Alert queued for sync.', { icon: '📡' });
       }
     } catch (err) {
-      console.error(err);
-      alert('SOS failed. Check GPS permissions.');
+      console.error('Fatal SOS error:', err);
+      toast.error('Critical failure. Please call hotlines directly.');
     } finally {
       setSending(false);
     }
@@ -1067,8 +963,6 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
           </div>
         )}
       </AnimatePresence>
-
-      {profile && profile.role === 'tanod' && <TanodCommandAlert profile={profile} />}
     </div>
   );
 }

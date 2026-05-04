@@ -28,8 +28,13 @@ const alarm = new Howl({
   volume: 0.6,
 });
 
+import { useIncidentStore } from '../store/useIncidentStore';
+import { useTanodStore } from '../store/useTanodStore';
+import { logIncidentAction } from '../services/logService';
+
 export default function AdminDashboard({ profile, onTabChange }: { profile: User | null, onTabChange: (tab: string) => void }) {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const { alerts } = useIncidentStore();
+  const { patrols } = useTanodStore();
   const [isFlashing, setIsFlashing] = useState(false);
   const [selectedAlertForDispatch, setSelectedAlertForDispatch] = useState<Alert | null>(null);
   const [stats, setStats] = useState({
@@ -42,31 +47,26 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
   useEffect(() => {
     if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod')) return;
 
-    // Alerts Feed
-    const q = query(collection(db, 'alerts'), orderBy('timestamp', 'desc'));
-    const unsubAlerts = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Alert));
-      setAlerts(list);
-      
-      // Play loud siren for 10 seconds if there's a new pending alert
-      const hasActive = list.some(a => a.status === 'pending');
-      if (hasActive) {
-        if (!alarm.playing()) {
-          alarm.volume(1.0);
-          alarm.play();
-          setIsFlashing(true);
-          setTimeout(() => { 
-            alarm.stop(); 
-            setIsFlashing(false);
-          }, 10000);
-        }
-      } else {
-        alarm.stop();
-        setIsFlashing(false);
+    // Play loud siren for 10 seconds if there's a new pending alert
+    const hasActive = alerts.some(a => a.status === 'pending');
+    if (hasActive) {
+      if (!alarm.playing()) {
+        alarm.volume(1.0);
+        alarm.play();
+        setIsFlashing(true);
+        setTimeout(() => { 
+          alarm.stop(); 
+          setIsFlashing(false);
+        }, 10000);
       }
-    }, (error) => {
-      console.error("Dashboard Alerts listener error:", error);
-    });
+    } else {
+      alarm.stop();
+      setIsFlashing(false);
+    }
+  }, [alerts, profile]);
+
+  useEffect(() => {
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod')) return;
 
     // Stats
     const fetchStats = async () => {
@@ -90,7 +90,6 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
 
     fetchStats();
     return () => {
-      unsubAlerts();
       unsubActiveStats();
       alarm.stop();
     };
@@ -127,6 +126,9 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
       }
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);
+      
+      // Log for audit
+      await logIncidentAction({ ...alert, ...updateData });
     } catch (error: any) {
       console.error("Error updating alert:", error);
       window.alert('Permission Denied: Ensure you are logged in as Admin/Tanod.');

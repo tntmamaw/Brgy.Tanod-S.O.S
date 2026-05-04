@@ -14,46 +14,44 @@ const alarm = new Howl({
   volume: 0.6,
 });
 
+import { useIncidentStore } from '../store/useIncidentStore';
+import { logIncidentAction } from '../services/logService';
+
 export default function TanodDashboard({ profile, onTabChange }: { profile: User | null, onTabChange: (tab: string) => void }) {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const { alerts } = useIncidentStore();
   const [isFlashing, setIsFlashing] = useState(false);
   const [shiftLog, setShiftLog] = useState<Alert[]>([]);
+
+  // Filter alerts for this tanod: pending OR specifically assigned/responded by them
+  const filteredAlerts = alerts.filter(a => 
+    a.status === 'pending' || 
+    a.assignedTo === profile?.uid || 
+    a.respondedBy === profile?.uid
+  );
 
   useEffect(() => {
     if (!profile || profile.role !== 'tanod') return;
 
-    // Active Alerts Feed (pending or responding by me)
-    const q = query(
-      collection(db, 'alerts'), 
-      where('status', 'in', ['pending', 'responding'])
-    );
-    
-    const unsubAlerts = onSnapshot(q, (snapshot) => {
-      let list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Alert));
-      // Sort in memory to avoid missing index errors
-      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      
-      // Show pending alerts OR alerts responding by this tanod
-      const filtered = list.filter(a => a.status === 'pending' || a.assignedTo === profile.uid || a.respondedBy === profile.uid);
-      setAlerts(filtered);
-      
-      // Play loud siren for 10 seconds if there's a new pending alert
-      const hasPending = filtered.some(a => a.status === 'pending');
-      if (hasPending) {
-         if (!alarm.playing()) {
-           alarm.volume(1.0);
-           alarm.play();
-           setIsFlashing(true);
-           setTimeout(() => { 
-             alarm.stop(); 
-             setIsFlashing(false);
-           }, 10000);
-         }
-      } else {
-        alarm.stop();
-        setIsFlashing(false);
-      }
-    });
+    // Play loud siren for 10 seconds if there's a new pending alert
+    const hasPending = filteredAlerts.some(a => a.status === 'pending');
+    if (hasPending) {
+       if (!alarm.playing()) {
+         alarm.volume(1.0);
+         alarm.play();
+         setIsFlashing(true);
+         setTimeout(() => { 
+           alarm.stop(); 
+           setIsFlashing(false);
+         }, 10000);
+       }
+    } else {
+      alarm.stop();
+      setIsFlashing(false);
+    }
+  }, [filteredAlerts, profile]);
+
+  useEffect(() => {
+    if (!profile || profile.role !== 'tanod') return;
 
     // Shift log (resolved by me today)
     const qLog = query(
@@ -67,7 +65,6 @@ export default function TanodDashboard({ profile, onTabChange }: { profile: User
     });
 
     return () => {
-      unsubAlerts();
       unsubLog();
       alarm.stop();
     };
@@ -118,6 +115,9 @@ export default function TanodDashboard({ profile, onTabChange }: { profile: User
       }
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);
+      
+      // Log for audit
+      await logIncidentAction({ ...alert, ...updateData });
     } catch (error: any) {
       console.error("Error updating alert:", error);
       window.alert('Failed to update status.');
@@ -138,13 +138,13 @@ export default function TanodDashboard({ profile, onTabChange }: { profile: User
 
           <div className="space-y-4">
             <AnimatePresence mode="popLayout">
-              {alerts.length === 0 ? (
+              {filteredAlerts.length === 0 ? (
                 <div className="bg-[#16191F] border border-[#2D3139] rounded-[40px] p-20 text-center">
                   <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4 opacity-20" />
                   <p className="text-[#8E9299] font-bold">No active incidents.</p>
                 </div>
               ) : (
-                alerts.map(alert => (
+                filteredAlerts.map(alert => (
                   <motion.div
                     layout
                     initial={{ opacity: 0, x: -20 }}
