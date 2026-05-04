@@ -99,7 +99,23 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
       
       if (status === 'resolved') {
         updateData.resolvedAt = new Date().toISOString();
-        updateData.resolutionNotes = 'Cleared by commander'; // Simple default
+        updateData.resolutionNotes = `Cleared by ${profile?.name || 'Admin'}`; // Simple default
+        
+        await addDoc(collection(db, 'incidents'), {
+          alertId: alert.id,
+          tanodId: profile?.uid || 'unknown',
+          tanodName: alert.respondedByName || profile?.name || 'Unknown',
+          date: new Date().toISOString().split('T')[0],
+          time: new Date().toLocaleTimeString(),
+          location: alert.customMessage || 'Location via GPS',
+          gpsLocation: alert.location,
+          type: alert.type,
+          description: `Automatically created from a resolved alert.\nCitizen: ${alert.residentName}\nResponse note: ${updateData.resolutionNotes}`,
+          status: 'resolved',
+          respondedAt: alert.respondedAt || updateData.respondedAt || new Date().toISOString(),
+          resolvedAt: updateData.resolvedAt,
+          adminOnDuty: profile?.name || 'Unknown'
+        });
       }
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);

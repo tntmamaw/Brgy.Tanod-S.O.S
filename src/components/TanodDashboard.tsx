@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Alert, User } from '../types';
 import { AlertTriangle, MapPin, Zap, CheckCircle } from 'lucide-react';
@@ -78,7 +78,36 @@ export default function TanodDashboard({ profile, onTabChange }: { profile: User
       
       if (status === 'resolved') {
         updateData.resolvedAt = new Date().toISOString();
-        updateData.resolutionNotes = 'Cleared by Tanod Responder';
+        updateData.resolutionNotes = `Cleared by ${profile?.name || 'Tanod Responder'}`;
+        
+        // Try to find an admin to assign as 'on duty'
+        let adminName = 'Unknown Admin';
+        try {
+          const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
+          const adminDocs = await getDocs(adminQuery);
+          if (!adminDocs.empty) {
+            adminName = adminDocs.docs[0].data().name || 'Admin';
+          }
+        } catch (e) {
+          console.error('Failed to fetch admin');
+        }
+
+        // Auto-create an incident log from this alert
+        await addDoc(collection(db, 'incidents'), {
+          alertId: alert.id,
+          tanodId: profile?.uid || 'unknown',
+          tanodName: profile?.name || 'Unknown Tanod',
+          date: new Date().toISOString().split('T')[0],
+          time: new Date().toLocaleTimeString(),
+          location: alert.customMessage || 'Location via GPS',
+          gpsLocation: alert.location,
+          type: alert.type,
+          description: `Automatically created from a resolved alert.\nCitizen: ${alert.residentName}\nResponse note: ${updateData.resolutionNotes}`,
+          status: 'resolved',
+          respondedAt: alert.respondedAt || updateData.respondedAt || new Date().toISOString(),
+          resolvedAt: updateData.resolvedAt,
+          adminOnDuty: adminName
+        });
       }
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);

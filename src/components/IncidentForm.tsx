@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 import { db, auth } from '../lib/firebase';
 import { User, IncidentStatus } from '../types';
 import { X, Send } from 'lucide-react';
@@ -26,12 +26,26 @@ export default function IncidentForm({ profile, onClose }: IncidentFormProps) {
     
     setSubmitting(true);
     try {
+      let adminName = profile.role === 'admin' ? profile.name : 'Unknown Admin';
+      if (profile.role !== 'admin') {
+        try {
+          const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
+          const adminDocs = await getDocs(adminQuery);
+          if (!adminDocs.empty) {
+            adminName = adminDocs.docs[0].data().name || 'Admin';
+          }
+        } catch (e) {
+          console.error('Failed to fetch admin');
+        }
+      }
+
       await addDoc(collection(db, 'incidents'), {
         ...formData,
         tanodId: auth.currentUser.uid,
         tanodName: profile.name,
         date: new Date().toISOString().split('T')[0],
         time: new Date().toLocaleTimeString(),
+        adminOnDuty: adminName
       });
       onClose();
     } catch (err) {

@@ -59,6 +59,7 @@ import AdminResidents from './components/AdminResidents';
 import PatrolScheduler from './components/PatrolScheduler';
 import RegistrationForm from './components/RegistrationForm';
 import IncidentForm from './components/IncidentForm';
+import ReportMap from './components/ReportMap';
 import { TanodLogo, TanodWordmark, BackgroundPattern, AppIcon } from './components/Branding';
 import { analyzeIncident } from './services/aiService';
 import { db as dexieDb } from './lib/mapDb';
@@ -1414,10 +1415,16 @@ function ReportsView() {
             <div className="space-y-4">
               <div className="p-5 bg-[#0F1115] rounded-2xl border border-[#2D3139]">
                 <p className="text-[10px] font-black text-[#8E9299] uppercase tracking-widest mb-2">Narrative</p>
-                <p className="text-sm text-white/90 leading-relaxed font-medium">{report.description}</p>
+                <p className="font-medium text-[15px] leading-[25px] text-[#fbf50a]">{report.description}</p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
+                {report.adminOnDuty && (
+                  <div className="col-span-2 p-4 bg-[#0F1115] rounded-xl border border-[#2D3139]">
+                    <p className="text-[8px] font-black text-[#8E9299] uppercase tracking-widest mb-1">Brgy. Hall Admin On Duty</p>
+                    <p className="text-xs font-bold text-white uppercase">{report.adminOnDuty}</p>
+                  </div>
+                )}
                 <div className="p-4 bg-[#0F1115] rounded-xl border border-[#2D3139]">
                   <p className="text-[8px] font-black text-[#8E9299] uppercase tracking-widest mb-1">Tanod In-Charge</p>
                   <p className="text-xs font-bold text-white uppercase">{report.tanodName}</p>
@@ -1426,12 +1433,40 @@ function ReportsView() {
                   <p className="text-[8px] font-black text-[#8E9299] uppercase tracking-widest mb-1">Date & Time</p>
                   <p className="text-xs font-bold text-white uppercase">{report.date} • {report.time}</p>
                 </div>
+                {report.respondedAt && report.resolvedAt && (
+                  <div className="col-span-2 p-4 bg-[#0F1115] rounded-xl border border-[#2D3139] flex flex-col gap-3 bg-blue-900/10 border-blue-500/20">
+                     <div className="flex justify-between items-center">
+                       <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Time to Resolve</p>
+                       <p className="text-sm font-bold text-white uppercase">
+                         {(() => {
+                           const start = new Date(report.respondedAt).getTime();
+                           const end = new Date(report.resolvedAt).getTime();
+                           const mins = Math.round((end - start) / 60000);
+                           if (mins < 1) return '< 1 minute';
+                           if (mins < 60) return `${mins} minutes`;
+                           const hrs = Math.floor(mins / 60);
+                           const hMins = mins % 60;
+                           return `${hrs} hr ${hMins} min`;
+                         })()}
+                       </p>
+                     </div>
+                     <div className="flex justify-between items-center text-[10px] text-blue-400/80 font-medium uppercase tracking-wider">
+                       <span>Received: {new Date(report.respondedAt).toLocaleTimeString()}</span>
+                       <span>Resolved: {new Date(report.resolvedAt).toLocaleTimeString()}</span>
+                     </div>
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="pt-2 border-t border-[#2D3139] flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-[#8E9299]" />
-              <p className="text-[10px] font-black text-[#8E9299] uppercase tracking-widest">{report.location}</p>
+            <div className="pt-2 border-t border-[#2D3139] flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#8E9299]" />
+                <p className="text-[10px] font-black text-[#8E9299] uppercase tracking-widest">{report.location}</p>
+              </div>
+              {report.gpsLocation && (
+                <ReportMap lat={report.gpsLocation.lat} lng={report.gpsLocation.lng} />
+              )}
             </div>
           </div>
         ))}

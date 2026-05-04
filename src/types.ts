@@ -83,11 +83,15 @@ export interface Incident {
   date: string;
   time: string;
   location: string;
+  gpsLocation?: { lat: number; lng: number };
   type: string;
   description: string;
   personsInvolved?: string;
   actionsTaken?: string;
   status: IncidentStatus;
+  respondedAt?: string;
+  resolvedAt?: string;
+  adminOnDuty?: string;
 }
 
 export interface PatrolLocation {
