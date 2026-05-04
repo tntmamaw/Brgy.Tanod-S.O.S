@@ -1,4 +1,4 @@
-import { db } from '../lib/firebase';
+import { db, auth } from '../lib/firebase';
 import { doc, updateDoc, onSnapshot, collection, query, where, getDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 
@@ -30,6 +30,13 @@ export const startGPSTracking = (
       async (pos) => {
         const path = `${collectionName}/${uid}`;
         try {
+          // Check if auth still exists before attempting cloud queries
+          // This avoids permission denied errors when signing out or when auth state is lost
+          if (!auth.currentUser) {
+            console.log("GPS skipping: No authenticated user");
+            return;
+          }
+          
           // Check if the document exists before updating
           // This avoids the "NOT_FOUND" error which manifests as permission denied in some scenarios 
           // or just fails silently with our previous catch
@@ -48,7 +55,9 @@ export const startGPSTracking = (
             // This prevents "Missing or insufficient permissions" errors.
             console.log(`GPS: Skipping update for ${path} as document does not exist yet.`);
           }
-        } catch (err) {
+        } catch (err: any) {
+          // Ignore if it's due to user being logged out recently
+          if (!auth.currentUser) return;
           handleFirestoreError(err, OperationType.UPDATE, path);
         }
       },

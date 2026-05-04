@@ -31,27 +31,39 @@ export default function AdminResidents({ profile }: { profile: any }) {
 
   const handleApprove = async (id: string, name: string) => {
     if (!confirm(`Are you sure you want to approve ${name}?`)) return;
-    await updateDoc(doc(db, 'residents', id), {
-      status: 'approved',
-      approvedAt: new Date().toISOString()
-    });
-    // Sync with users collection
-    await updateDoc(doc(db, 'users', id), {
-      status: 'approved'
-    });
+    try {
+      await updateDoc(doc(db, 'residents', id), {
+        status: 'approved',
+        approvedAt: new Date().toISOString()
+      });
+      console.log('Approve resident doc success');
+      // Sync with users collection
+      await updateDoc(doc(db, 'users', id), {
+        status: 'approved'
+      });
+      console.log('Approve user doc success');
+    } catch (err: any) {
+      console.error('Approve failed:', err);
+      alert('Approve failed: ' + err.message);
+    }
   };
 
   const handleReject = async (id: string, name: string) => {
     const reason = prompt(`Reason for rejecting ${name}:`);
     if (reason === null) return;
-    await updateDoc(doc(db, 'residents', id), {
-      status: 'rejected',
-      rejectionReason: reason
-    });
-    // Sync with users collection
-    await updateDoc(doc(db, 'users', id), {
-      status: 'rejected'
-    });
+    try {
+      await updateDoc(doc(db, 'residents', id), {
+        status: 'rejected',
+        rejectionReason: reason
+      });
+      // Sync with users collection
+      await updateDoc(doc(db, 'users', id), {
+        status: 'rejected'
+      });
+    } catch (err: any) {
+      console.error('Reject failed:', err);
+      alert('Reject failed: ' + err.message);
+    }
   };
 
   const filteredResidents = residents.filter(r => 

@@ -10,8 +10,9 @@
 let socket: WebSocket | null = null;
 let watchId: number | null = null;
 
-// Replace with your production Railway/Deployment URL
-const SERVER = "ws://localhost:8000/ws/gps"; 
+// Replace localhost with your Railway domain
+const SERVER = "wss://brgytanod-sos-production.up.railway.app/ws/gps"; 
+// Note: Use 'wss://' for secure websockets, not 'ws://'
 
 export const startGPS = (
   userId: string,

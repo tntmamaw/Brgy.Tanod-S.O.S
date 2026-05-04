@@ -195,13 +195,38 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
               position={[patrol.location.lat, patrol.location.lng]} 
               icon={TanodIcon}
             >
-              <Popup>
-                <div className="p-1 text-xs">
-                  <p className="font-bold text-[#4CAF50]">Tanod: {patrol.tanodName}</p>
-                  <p>Status: {patrol.isActive ? 'Active Patrol' : 'Inactive'}</p>
-                  {patrol.location.accuracy && (
-                    <p className="text-[10px] text-gray-400 mt-1">Accuracy: ±{Math.round(patrol.location.accuracy)}m</p>
-                  )}
+              <Popup className="dark-popup">
+                <div className="p-2 min-w-[160px] space-y-2">
+                  <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+                    <div className={cn("w-2 h-2 rounded-full", patrol.isActive ? "bg-green-500 animate-pulse" : "bg-gray-500")} />
+                    <p className="font-bold text-white uppercase text-sm m-0 leading-tight">{patrol.tanodName}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-400">ID:</span>
+                      <span className="font-mono text-gray-200">{patrol.tanodId.slice(0, 8)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-gray-400">Status:</span>
+                      <span className={cn("font-medium", patrol.isActive ? "text-green-400" : "text-gray-500")}>
+                        {patrol.isActive ? 'ON DUTY' : 'OFF DUTY'}
+                      </span>
+                    </div>
+                    {patrol.lastUpdate && (
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-400">Last Seen:</span>
+                        <span className="text-gray-300">
+                          {new Date(patrol.lastUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    )}
+                    {patrol.location.accuracy && (
+                      <div className="flex justify-between items-center text-xs">
+                        <span className="text-gray-400">Accuracy:</span>
+                        <span className="text-gray-300">±{Math.round(patrol.location.accuracy)}m</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </Popup>
             </Marker>
@@ -255,6 +280,15 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
       <style>{`
         .leaflet-container {
           background: #0F1115 !important;
+        }
+        .dark-popup .leaflet-popup-content-wrapper,
+        .dark-popup .leaflet-popup-tip {
+          background: #16191F !important;
+          color: white !important;
+          border: 1px solid #2D3139;
+        }
+        .dark-popup .leaflet-popup-content p {
+          margin: 0 !important;
         }
         @keyframes pulse {
           0% { transform: scale(1); opacity: 1; }
