@@ -6,6 +6,7 @@ import { downloadRegion } from '../lib/mapDownloader';
 import { getCachedTile, cacheTile } from '../lib/mapDb';
 import { HardDrive, Download, CheckCircle2 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { OfflineTileLayer } from './OfflineTileLayer';
 
 // Fix for default marker icons in Leaflet with React
 const DefaultIcon = L.icon({
@@ -17,16 +18,16 @@ const DefaultIcon = L.icon({
 
 const SosIcon = L.divIcon({
   className: 'custom-div-icon',
-  html: `<div style="background-color: #FF4B4B; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 10px #FF4B4B; border: 2px solid white; animation: pulse 1s infinite;"></div>`,
-  iconSize: [12, 12],
-  iconAnchor: [6, 6],
+  html: `<div style="font-size: 24px; text-align: center; text-shadow: 0 0 10px rgba(255, 75, 75, 0.5);">🔴</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
 });
 
 const TanodIcon = L.divIcon({
   className: 'custom-div-icon',
-  html: `<div style="background-color: #4CAF50; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 8px #4CAF50; border: 2px solid white;"></div>`,
-  iconSize: [10, 10],
-  iconAnchor: [5, 5],
+  html: `<div style="font-size: 24px; text-align: center; text-shadow: 0 0 10px rgba(74, 175, 80, 0.5);">🟢</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
 });
 
 function ChangeView({ center, zoom }: { center: [number, number], zoom?: number }) {
@@ -38,8 +39,20 @@ function ChangeView({ center, zoom }: { center: [number, number], zoom?: number 
   }, [center, zoom, map]);
 
   useEffect(() => {
+    let isMounted = true;
+    
+    const safeInvalidate = () => {
+      if (isMounted && map && (map as any)._mapPane) {
+        try {
+          map.invalidateSize({ animate: false });
+        } catch (e) {
+          // Ignore leaflet errors if container is detached
+        }
+      }
+    };
+
     const observer = new window.ResizeObserver(() => {
-      map.invalidateSize();
+      safeInvalidate();
     });
     
     const container = map.getContainer();
@@ -47,13 +60,18 @@ function ChangeView({ center, zoom }: { center: [number, number], zoom?: number 
     
     // Multiple fallbacks for React render cycles
     const timers = [
-      setTimeout(() => map.invalidateSize(), 10),
-      setTimeout(() => map.invalidateSize(), 100),
-      setTimeout(() => map.invalidateSize(), 500),
-      setTimeout(() => map.invalidateSize(), 1000)
+      setTimeout(safeInvalidate, 10),
+      setTimeout(safeInvalidate, 100),
+      setTimeout(safeInvalidate, 500),
+      setTimeout(safeInvalidate, 1000)
     ];
 
+    map.whenReady(() => {
+      setTimeout(safeInvalidate, 0);
+    });
+
     return () => {
+      isMounted = false;
       observer.disconnect();
       timers.forEach(clearTimeout);
     };
@@ -68,47 +86,6 @@ interface MapProps {
   showHeatmap?: boolean;
 }
 
-function OfflineTileLayer(props: any) {
-  const map = useMap();
-  
-  useEffect(() => {
-    const tileLayer = L.tileLayer(props.url, {
-      ...props,
-      // Custom tile creation logic
-    });
-
-    // Override the tile creation to check cache first
-    (tileLayer as any).createTile = function(coords: any, done: L.DoneCallback) {
-      const tile = document.createElement('img');
-      L.DomEvent.on(tile, 'load', L.Util.bind((tileLayer as any)._tileOnLoad, tileLayer, done, tile));
-      L.DomEvent.on(tile, 'error', L.Util.bind((tileLayer as any)._tileOnError, tileLayer, done, tile));
-
-      const url = tileLayer.getTileUrl(coords);
-      
-      getCachedTile(url).then(cachedUrl => {
-        if (cachedUrl) {
-          tile.src = cachedUrl;
-        } else {
-          tile.src = url;
-          // Cache on the fly
-          fetch(url).then(res => res.blob()).then(blob => {
-            cacheTile(url, blob);
-          });
-        }
-      });
-
-      return tile;
-    };
-
-    tileLayer.addTo(map);
-    return () => {
-      map.removeLayer(tileLayer);
-    };
-  }, [map, props.url]);
-
-  return null;
-}
-
 export default function ActiveMap({ alerts, patrols, center: propCenter, showHeatmap = true }: MapProps) {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -121,6 +98,18 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
   const [mapCenter, setMapCenter] = useState<[number, number]>(propCenter || [13.2236, 120.5960]); // Mamburao, Occidental Mindoro
   const [zoom, setZoom] = useState(15);
 
+  useEffect(() => {
+    const hasDownloaded = localStorage.getItem('map_downloaded');
+    if (hasDownloaded) {
+      setIsDownloaded(true);
+    } else {
+      // Auto download in background
+      handleDownload().then(() => {
+        localStorage.setItem('map_downloaded', 'true');
+      });
+    }
+  }, []);
+
   const handleDownload = async () => {
     setDownloading(true);
     try {
@@ -128,6 +117,7 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
         setProgress({ current, total });
       });
       setIsDownloaded(true);
+      localStorage.setItem('map_downloaded', 'true');
     } catch (err) {
       console.error(err);
     } finally {
@@ -151,7 +141,9 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
   
     useEffect(() => {
       setTimeout(() => {
-        map.invalidateSize();
+        if (map && (map as any)._mapPane) {
+          map.invalidateSize();
+        }
       }, 400); 
     }, [map]);
 
@@ -210,8 +202,8 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
         className="w-full h-full z-0"
       >
         <OfflineTileLayer
-          attribution="Google Maps"
-          url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+          attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <ChangeView center={mapCenter} zoom={zoom} />
         

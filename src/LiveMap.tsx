@@ -1,27 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, Marker, Popup } from "react-leaflet";
 import L from 'leaflet';
 import { startGPS } from "./gpsSystem";
+import { OfflineTileLayer } from './components/OfflineTileLayer';
 
 /**
  * Custom Icons for Web Leaflet
  */
-const TanodIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+const TanodIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: `<div style="font-size: 24px; text-align: center; text-shadow: 0 0 10px rgba(74, 175, 80, 0.5);">🟢</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12]
 });
 
-const CitizenIcon = new L.Icon({
-  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41]
+const CitizenIcon = L.divIcon({
+  className: 'custom-div-icon',
+  html: `<div style="font-size: 24px; text-align: center; text-shadow: 0 0 10px rgba(255, 75, 75, 0.5);">🔴</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12]
 });
 
 const CENTER: [number, number] = [13.2236, 120.5960]; // Mamburao
@@ -33,8 +30,20 @@ function MyLocationButton() {
   const [locating, setLocating] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+    
+    const safeInvalidate = () => {
+      if (isMounted && map && (map as any)._mapPane) {
+        try {
+          map.invalidateSize({ animate: false });
+        } catch (e) {
+          // Ignore leaflet errors if container is detached
+        }
+      }
+    };
+
     const observer = new window.ResizeObserver(() => {
-      map.invalidateSize();
+      safeInvalidate();
     });
     
     const container = map.getContainer();
@@ -42,13 +51,18 @@ function MyLocationButton() {
     
     // Multiple fallbacks for React render cycles
     const timers = [
-      setTimeout(() => map.invalidateSize(), 10),
-      setTimeout(() => map.invalidateSize(), 100),
-      setTimeout(() => map.invalidateSize(), 500),
-      setTimeout(() => map.invalidateSize(), 1000)
+      setTimeout(safeInvalidate, 10),
+      setTimeout(safeInvalidate, 100),
+      setTimeout(safeInvalidate, 500),
+      setTimeout(safeInvalidate, 1000)
     ];
 
+    map.whenReady(() => {
+      setTimeout(safeInvalidate, 0);
+    });
+
     return () => {
+      isMounted = false;
       observer.disconnect();
       timers.forEach(clearTimeout);
     };
@@ -112,9 +126,9 @@ export default function LiveMap() {
         zoom={14} 
         style={{ height: "100%", width: "100%" }}
       >
-        <TileLayer
-          attribution="Google Maps"
-          url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
+        <OfflineTileLayer
+          attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         <MyLocationButton />
         {Object.values(users).map((u: any, i: number) => (

@@ -25,7 +25,7 @@ export async function analyzeIncident(description: string, initialType?: string)
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
       contents: `Analyze the following emergency SOS description and categorize it. 
       Initial reported type: ${initialType || 'Unknown'}
       Description: ${description}

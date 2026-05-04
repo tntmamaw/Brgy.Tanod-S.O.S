@@ -59,7 +59,11 @@ export interface Alert {
   };
   status: AlertStatus;
   timestamp: string;
+  assignedTo?: string;
   respondedBy?: string;
+  respondedByName?: string;
+  respondedAt?: string;
+  resolvedAt?: string;
   resolutionNotes?: string;
   aiAnalysis?: {
     incidentType: string;

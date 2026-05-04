@@ -45,9 +45,14 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Alert));
       setAlerts(list);
       
+      // Play loud siren for 10 seconds if there's a new pending alert
       const hasActive = list.some(a => a.status === 'pending');
       if (hasActive) {
-        if (!alarm.playing()) alarm.play();
+        if (!alarm.playing()) {
+          alarm.volume(1.0);
+          alarm.play();
+          setTimeout(() => { alarm.stop(); }, 10000);
+        }
       } else {
         alarm.stop();
       }
@@ -88,26 +93,13 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
       const updateData: any = { status };
       
       if (status === 'responding') {
-        updateData.respondedBy = profile?.uid;
+        updateData.respondedBy = profile?.uid || 'unknown';
         updateData.respondedAt = new Date().toISOString();
       }
       
       if (status === 'resolved') {
         updateData.resolvedAt = new Date().toISOString();
         updateData.resolutionNotes = 'Cleared by commander'; // Simple default
-        
-        // Log to incidents for reports
-        await addDoc(collection(db, 'incidents'), {
-          tanodId: profile?.uid,
-          tanodName: profile?.name || 'Admin',
-          date: new Date().toLocaleDateString(),
-          time: new Date().toLocaleTimeString(),
-          type: alert.type,
-          description: `Emergency alert from ${alert.residentName} at ${alert.location.lat}, ${alert.location.lng} was resolved.`,
-          status: 'resolved',
-          location: 'Zone B, Sector 4', // Default for now
-          alertId: alert.id
-        });
       }
 
       await updateDoc(doc(db, 'alerts', alert.id), updateData);
@@ -131,43 +123,9 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
 
   return (
     <div className="space-y-6 md:space-y-8">
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-        <StatCard 
-          label="Approved Residents" 
-          value={stats.residents} 
-          icon={Users} 
-          color="text-blue-500" 
-          bg="bg-blue-500/10" 
-        />
-        <StatCard 
-          label="Pending Registration" 
-          value={stats.pendingReg} 
-          icon={Clock} 
-          color="text-amber-500" 
-          bg="bg-amber-500/10" 
-          pulse={stats.pendingReg > 0}
-        />
-        <StatCard 
-          label="Active SOS Alerts" 
-          value={stats.activeAlerts} 
-          icon={AlertTriangle} 
-          color="text-red-500" 
-          bg="bg-red-500/10" 
-          pulse={stats.activeAlerts > 0}
-        />
-        <StatCard 
-          label="Online Tanods" 
-          value={onDutyTanods.length || 0} 
-          icon={() => <TanodLogo size={24} animated={false} className="w-6 h-6" />} 
-          color="text-green-500" 
-          bg="bg-green-500/10" 
-        />
-      </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         {/* Alerts Feed */}
-        <div className="lg:col-span-2 space-y-4 md:space-y-6">
+        <div className="lg:col-span-3 space-y-4 md:space-y-6">
           <div className="flex items-center justify-between">
             <h3 className="text-xl font-bold flex items-center gap-2">
               <Zap className="w-5 h-5 text-[#FF4B4B]" />
@@ -303,9 +261,44 @@ export default function AdminDashboard({ profile, onTabChange }: { profile: User
             </AnimatePresence>
           </div>
         </div>
+      </div>
+      
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+        <StatCard 
+          label="Approved Residents" 
+          value={stats.residents} 
+          icon={Users} 
+          color="text-blue-500" 
+          bg="bg-blue-500/10" 
+        />
+        <StatCard 
+          label="Pending Registration" 
+          value={stats.pendingReg} 
+          icon={Clock} 
+          color="text-amber-500" 
+          bg="bg-amber-500/10" 
+          pulse={stats.pendingReg > 0}
+        />
+        <StatCard 
+          label="Active SOS Alerts" 
+          value={stats.activeAlerts} 
+          icon={AlertTriangle} 
+          color="text-red-500" 
+          bg="bg-red-500/10" 
+          pulse={stats.activeAlerts > 0}
+        />
+        <StatCard 
+          label="Online Tanods" 
+          value={onDutyTanods.length || 0} 
+          icon={() => <TanodLogo size={24} animated={false} className="w-6 h-6" />} 
+          color="text-green-500" 
+          bg="bg-green-500/10" 
+        />
+      </div>
 
-        {/* Sidebar Info */}
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+        <div className="lg:col-span-1 space-y-6">
           <div className="bg-[#16191F] border border-[#2D3139] rounded-[40px] p-8 shadow-xl">
             <h4 className="text-[10px] font-black uppercase text-[#8E9299] tracking-[0.3em] mb-6">Tanods On Duty</h4>
             <div className="space-y-4">

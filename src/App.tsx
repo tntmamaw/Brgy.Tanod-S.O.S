@@ -52,6 +52,7 @@ import { Howl } from 'howler';
 import ActiveMap from './components/ActiveMap';
 import LiveMap from './LiveMap';
 import AdminDashboard from './components/AdminDashboard';
+import TanodDashboard from './components/TanodDashboard';
 import { Shift } from './types';
 import { format } from 'date-fns';
 import AdminResidents from './components/AdminResidents';
@@ -97,8 +98,13 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [viewOverride, setViewOverride] = useState<'admin' | 'tanod' | 'resident' | null>(null);
 
+  const isRuben = user?.email === 'rubenlleg12@gmail.com';
   const effectiveRole = viewOverride || profile?.role;
-  const effectiveProfile = profile ? { ...profile, role: effectiveRole as 'admin' | 'tanod' | 'resident' } : null;
+  const effectiveProfile = profile ? { 
+    ...profile, 
+    role: effectiveRole as 'admin' | 'tanod' | 'resident',
+    name: isRuben ? 'RubenLlego' : profile.name
+  } : null;
 
   // Live GPS Tracking for active users
   useEffect(() => {
@@ -179,19 +185,29 @@ export default function App() {
     let alertsQ;
     
     if (profile?.role === 'tanod' || profile?.role === 'admin') {
-      alertsQ = query(qBase, where('status', 'in', ['pending', 'responding']), orderBy('timestamp', 'desc'));
+      alertsQ = query(qBase, where('status', 'in', ['pending', 'responding']));
     } else {
-      alertsQ = query(qBase, where('residentId', '==', user.uid), orderBy('timestamp', 'desc'));
+      alertsQ = query(qBase, where('residentId', '==', user.uid));
     }
 
     const unsubAlerts = onSnapshot(alertsQ, (snapshot) => {
       const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Alert));
+      // Sort in memory to avoid missing index errors
+      list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      
       setAlerts(list);
       
       if (list.length > 0 && (profile?.role === 'tanod' || profile?.role === 'admin')) {
         const hasActive = list.some(a => a.status === 'pending');
-        if (hasActive && !siren.playing()) siren.play();
-        if (!hasActive) siren.stop();
+        if (hasActive) {
+          if (!siren.playing()) {
+            siren.volume(1.0);
+            siren.play();
+            setTimeout(() => { siren.stop(); }, 10000);
+          }
+        } else {
+          siren.stop();
+        }
       } else {
         siren.stop();
       }
@@ -432,11 +448,21 @@ export default function App() {
         <div className="p-4 mt-auto border-t border-[#2D3139]">
           <div className="flex items-center gap-3 p-2 rounded-xl bg-[#0A0C10] mb-4 border border-[#2D3139]">
             <div className="w-10 h-10 rounded-full bg-[#252932] overflow-hidden flex items-center justify-center border border-[#2D3139] shrink-0">
-              {user.photoURL ? <img src={user.photoURL} referrerPolicy="no-referrer" alt="Profile" className="w-full h-full object-cover" /> : <UserIcon className="w-6 h-6 text-[#8E9299]" />}
+              {user.email === 'rubenlleg12@gmail.com' ? (
+                <img src="/ruben_avatar.jpg" referrerPolicy="no-referrer" alt="Profile" className="w-full h-full object-cover" />
+              ) : user.photoURL ? (
+                <img src={user.photoURL} referrerPolicy="no-referrer" alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <UserIcon className="w-6 h-6 text-[#8E9299]" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold truncate">{profile?.name}</p>
-              <p className="text-[10px] text-[#8E9299] uppercase tracking-widest">{profile?.role}</p>
+              <p className="text-sm font-bold truncate">
+                {user.email === 'rubenlleg12@gmail.com' ? 'RubenLlego' : profile?.name}
+              </p>
+              <p className="text-[10px] text-[#8E9299] uppercase tracking-widest">
+                {user.email === 'rubenlleg12@gmail.com' ? 'System Owner/Head Developer' : profile?.role}
+              </p>
             </div>
           </div>
           <button onClick={() => signOut(auth)} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[#FF4B4B] hover:bg-[rgba(255,75,75,0.1)] transition-all">
@@ -496,15 +522,31 @@ export default function App() {
               <DashboardView profile={effectiveProfile} alerts={alerts} patrols={patrols} onTabChange={setActiveTab} isOnline={isOnline} />
             )}
             {activeTab === 'map' && (
-              <div className="h-full min-h-[500px]">
+              <div className="h-full min-h-[500px] flex flex-col gap-4">
+                <div className="bg-[#16191F] p-4 rounded-xl border border-[#2D3139] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-bold font-mono uppercase">Global Area Map</h3>
+                    <p className="text-xs text-[#8E9299]">Live view of all emergency alerts and active patrols</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-black tracking-widest text-[#8E9299]">
+                    <div className="flex items-center gap-2"><span className="text-base">🔴</span> RESIDENT SOS</div>
+                    <div className="flex items-center gap-2"><span className="text-base">🟢</span> TANOD ON DUTY</div>
+                  </div>
+                </div>
                 <ActiveMap alerts={alerts} patrols={patrols} />
               </div>
             )}
             {activeTab === 'tracker' && (
               <div className="h-full min-h-[500px] flex flex-col gap-4">
-                <div className="bg-[#16191F] p-4 rounded-xl border border-[#2D3139]">
-                  <h3 className="text-lg font-bold font-mono uppercase">Live GPS Tracker</h3>
-                  <p className="text-xs text-[#8E9299]">Real-time Tanod-to-Citizen streaming via WebSockets/Firebase</p>
+                <div className="bg-[#16191F] p-4 rounded-xl border border-[#2D3139] flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-bold font-mono uppercase">Live GPS Tracker</h3>
+                    <p className="text-xs text-[#8E9299]">Real-time Tanod-to-Citizen streaming via WebSockets/Firebase</p>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs font-black tracking-widest text-[#8E9299]">
+                    <div className="flex items-center gap-2"><span className="text-base">🔴</span> RESIDENT SOS</div>
+                    <div className="flex items-center gap-2"><span className="text-base">🟢</span> TANOD ON DUTY</div>
+                  </div>
                 </div>
                 <LiveMap />
               </div>
@@ -657,6 +699,10 @@ function RoleCard({ title, desc, icon: Icon, onClick }: any) {
 function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patrols: PatrolLocation[], isOnline: boolean }) {
   const [sending, setSending] = useState(false);
   const [activeAlert, setActiveAlert] = useState<Alert | null>(null);
+  const [sosTypeToSubmit, setSosTypeToSubmit] = useState<EmergencyType | null>(null);
+  const [isChoosingCategory, setIsChoosingCategory] = useState(false);
+  const [sosDescription, setSosDescription] = useState('');
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(
@@ -678,10 +724,9 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
     });
   }, [profile.uid]);
 
-  const handleSOS = async (type: EmergencyType = 'other') => {
-    const description = prompt("Describe the emergency (e.g. 'Accident near gate' or 'Fire in kitchen'):");
-    if (description === null) return;
-    
+  const handleSOS = async (type: EmergencyType = 'other', description: string) => {
+    setSosTypeToSubmit(null);
+    setSosDescription('');
     setSending(true);
     try {
       const pos = await new Promise<GeolocationPosition>((res, rej) => 
@@ -718,31 +763,30 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
         }
       });
       
-      const alertData: Omit<Alert, 'id'> = {
+      const locationObj: any = { 
+        lat: pos.coords.latitude, 
+        lng: pos.coords.longitude
+      };
+      if (pos.coords.accuracy) locationObj.accuracy = pos.coords.accuracy;
+
+      const alertData: any = {
         residentId: profile?.uid || '',
         residentName: profile?.name || 'Unknown Resident',
-        residentMobile: profile?.phone,
         type: aiAnalysis.incidentType.toLowerCase() as any,
-        customMessage: description || undefined,
-        location: { 
-          lat: pos.coords.latitude, 
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy
-        },
-        status: nearestTanodId ? 'responding' : 'pending',
+        location: locationObj,
+        status: 'pending', // Always start as pending so the siren activates!
         timestamp: new Date().toISOString(),
-        respondedBy: nearestTanodName || undefined,
         aiAnalysis: aiAnalysis
       };
       
+      if (profile?.phone) alertData.residentMobile = profile.phone;
+      if (description) alertData.customMessage = description;
+      if (nearestTanodId) alertData.assignedTo = nearestTanodId;
+      
       if (isOnline) {
         const docRef = await addDoc(collection(db, 'alerts'), alertData);
-        if (nearestTanodId) {
-          await updateDoc(doc(db, 'tanods', nearestTanodId), { 
-            status: 'responding',
-            activeAlertId: docRef.id 
-          });
-        }
+        // We do NOT automatically set the tanod to responding. We want them to accept it!
+        // The nearest tanod is just 'assignedTo' as a suggestion.
       } else {
         await dexieDb.pendingAlerts.add({
           data: alertData,
@@ -800,11 +844,7 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
 
               <div className="flex gap-4">
                 <button 
-                  onClick={async () => {
-                    if (confirm('Are you sure you want to cancel this emergency alert?')) {
-                      await updateDoc(doc(db, 'alerts', activeAlert.id), { status: 'cancelled' });
-                    }
-                  }}
+                  onClick={() => setCancellingId(activeAlert.id)}
                   className="px-6 py-3 bg-[#252932] text-[#8E9299] text-xs font-black rounded-xl hover:text-white hover:bg-[#2D3139] transition-all uppercase tracking-widest"
                 >
                   Cancel SOS
@@ -823,7 +863,7 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
             
             <button 
               disabled={sending}
-              onClick={() => handleSOS()}
+              onClick={() => setIsChoosingCategory(true)}
               className={cn(
                 "w-full aspect-square md:aspect-auto md:h-64 rounded-full md:rounded-[40px] flex flex-col items-center justify-center gap-4 transition-all duration-500 shadow-2xl relative group",
                 sending ? "bg-amber-600 scale-95" : "bg-[#FF4B4B] hover:bg-[#FF3333] hover:shadow-[0_0_60px_rgba(255,75,75,0.4)]"
@@ -839,38 +879,16 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
         </div>
       )}
 
-      {!activeAlert && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {(['medical', 'fire', 'crime', 'flood'] as EmergencyType[]).map(type => {
-            const getIcon = (t: string) => {
-              switch(t) {
-                case 'medical': return '🏥';
-                case 'fire': return '🔥';
-                case 'crime': return '🚨';
-                case 'flood': return '🌊';
-                default: return '⚠️';
-              }
-            };
-            return (
-              <button 
-                key={type}
-                onClick={() => handleSOS(type)}
-                className="p-6 bg-[#16191F] border border-[#2D3139] rounded-3xl hover:bg-[#1A1D23] hover:border-[#FF4B4B] transition-all group"
-              >
-                <div className="w-12 h-12 bg-[#252932] rounded-2xl flex items-center justify-center mb-4 group-hover:bg-[#FF4B4B] transition-colors text-2xl">
-                  <span>{getIcon(type)}</span>
-                </div>
-                <p className="text-xs font-black uppercase text-[#8E9299] tracking-widest group-hover:text-white">{type}</p>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       <div className="bg-[#16191F] border border-[#2D3139] rounded-[32px] md:rounded-[40px] p-6 md:p-8">
-        <h3 className="font-bold text-xl mb-6 flex items-center gap-2 text-white">
-          <MapIcon className="w-5 h-5 text-[#FF4B4B]" /> LIVE PATROL STATUS
-        </h3>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <h3 className="font-bold text-xl flex items-center gap-2 text-white uppercase italic tracking-tighter">
+            <MapIcon className="w-5 h-5 text-[#FF4B4B]" /> LIVE PATROL STATUS
+          </h3>
+          <div className="flex items-center gap-4 text-xs font-black tracking-widest text-[#8E9299]">
+            <div className="flex items-center gap-2"><span className="text-base">🔴</span> RESIDENT SOS</div>
+            <div className="flex items-center gap-2"><span className="text-base">🟢</span> TANOD ON DUTY</div>
+          </div>
+        </div>
         <div className="h-64 rounded-[30px] overflow-hidden border border-[#2D3139]">
           <ActiveMap alerts={activeAlert ? [activeAlert] : []} patrols={patrols} />
         </div>
@@ -902,6 +920,131 @@ function ResidentDashboard({ profile, patrols, isOnline }: { profile: User, patr
       </div>
 
       <RecentAlerts residentId={profile.uid} />
+
+      {/* SOS Category Modal */}
+      <AnimatePresence>
+        {isChoosingCategory && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[10000] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#16191F] border border-[#2D3139] w-full max-w-lg rounded-[32px] overflow-hidden shadow-2xl flex flex-col p-6"
+            >
+              <h3 className="font-black italic text-xl md:text-2xl tracking-tighter text-white mb-2 uppercase text-center">Select Emergency</h3>
+              <p className="text-[#8E9299] text-xs font-medium mb-6 text-center">What is the nature of the emergency?</p>
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                {(['medical', 'fire', 'crime', 'flood'] as EmergencyType[]).map(type => {
+                  const getIcon = (t: string) => {
+                    switch(t) {
+                      case 'medical': return '🏥';
+                      case 'fire': return '🔥';
+                      case 'crime': return '🚨';
+                      case 'flood': return '🌊';
+                      default: return '⚠️';
+                    }
+                  };
+                  return (
+                     <button 
+                      key={type}
+                      onClick={() => { setIsChoosingCategory(false); setSosTypeToSubmit(type); }}
+                      className="p-6 bg-[#0F1115] border border-[#2D3139] rounded-3xl hover:bg-[#1A1D23] hover:border-[#FF4B4B] transition-all group flex flex-col items-center"
+                    >
+                      <div className="w-16 h-16 bg-[#252932] rounded-2xl flex items-center justify-center mb-4 group-hover:bg-[#FF4B4B] transition-colors text-3xl">
+                        <span>{getIcon(type)}</span>
+                      </div>
+                      <p className="text-sm font-black uppercase text-[#8E9299] tracking-widest group-hover:text-white">{type}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setIsChoosingCategory(false)}
+                  className="flex-1 py-4 bg-[#252932] text-white font-black rounded-2xl hover:bg-[#2D3139] transition-all text-sm uppercase italic tracking-tighter"
+                >
+                  Cancel Tracking
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* SOS Description Modal */}
+      <AnimatePresence>
+        {sosTypeToSubmit && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#16191F] border border-[#2D3139] w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl flex flex-col p-6"
+            >
+              <h3 className="font-black italic text-xl md:text-2xl tracking-tighter text-white mb-2 uppercase">Describe Emergency</h3>
+              <p className="text-[#8E9299] text-xs font-medium mb-6">Briefly describe the situation to help Tanods prepare properly.</p>
+              
+              <textarea 
+                value={sosDescription}
+                onChange={(e) => setSosDescription(e.target.value)}
+                placeholder="e.g. Accident near gate, Fire in kitchen"
+                className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white placeholder-[#8E9299] mb-6 focus:outline-none focus:border-[#FF4B4B] min-h-[120px]"
+              />
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => { setSosTypeToSubmit(null); setSosDescription(''); }}
+                  className="flex-1 py-3 bg-[#252932] text-white font-bold rounded-xl hover:bg-[#2D3139] transition-all text-sm uppercase"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => handleSOS(sosTypeToSubmit, sosDescription)}
+                  className="flex-1 py-3 bg-[#FF4B4B] text-white font-bold rounded-xl hover:bg-red-700 transition-all text-sm uppercase"
+                >
+                  Send Alert
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Cancel SOS Modal */}
+      <AnimatePresence>
+        {cancellingId && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#16191F] border border-[#2D3139] w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl flex flex-col p-6"
+            >
+              <h3 className="font-black italic text-xl md:text-2xl tracking-tighter text-white mb-6 uppercase text-center">Cancel Alert?</h3>
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setCancellingId(null)}
+                  className="flex-1 py-3 bg-[#252932] text-white font-bold rounded-xl hover:bg-[#2D3139] transition-all text-sm uppercase"
+                >
+                  No, Keep SOS
+                </button>
+                <button 
+                  onClick={async () => {
+                    await updateDoc(doc(db, 'alerts', cancellingId), { status: 'cancelled' });
+                    setCancellingId(null);
+                  }}
+                  className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all text-sm uppercase"
+                >
+                  Yes, Cancel
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -955,7 +1098,8 @@ function RecentAlerts({ residentId }: { residentId: string }) {
 
 function DashboardView({ profile, alerts, patrols, onTabChange, isOnline }: { profile: User, alerts: Alert[], patrols: PatrolLocation[], onTabChange: (tab: string) => void, isOnline: boolean }) {
   if (profile.role === 'resident') return <ResidentDashboard profile={profile} patrols={patrols} isOnline={isOnline} />;
-  if (profile.role === 'tanod' || profile.role === 'admin') return <AdminDashboard profile={profile} onTabChange={onTabChange} />;
+  if (profile.role === 'tanod') return <TanodDashboard profile={profile} onTabChange={onTabChange} />;
+  if (profile.role === 'admin') return <AdminDashboard profile={profile} onTabChange={onTabChange} />;
   return <div className="text-center p-12 text-[#8E9299]">Unauthorized Access</div>;
 }
 
@@ -1005,6 +1149,9 @@ function DirectoryView() {
 
 function TanodRosterView() {
   const [tanods, setTanods] = useState<User[]>([]);
+  const [addingUnit, setAddingUnit] = useState(false);
+  const [newUnitName, setNewUnitName] = useState('');
+  const [newUnitEmail, setNewUnitEmail] = useState('');
 
   useEffect(() => {
     const q = query(collection(db, 'users'), where('role', '==', 'tanod'));
@@ -1012,6 +1159,26 @@ function TanodRosterView() {
       setTanods(snap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
     });
   }, []);
+
+  const handleAddUnit = async () => {
+    if (!newUnitName.trim() || !newUnitEmail.trim()) return;
+    try {
+      await addDoc(collection(db, 'users'), {
+        uid: Date.now().toString(),
+        name: newUnitName,
+        email: newUnitEmail,
+        role: 'tanod',
+        status: 'approved',
+        createdAt: new Date().toISOString()
+      });
+      setAddingUnit(false);
+      setNewUnitName('');
+      setNewUnitEmail('');
+    } catch (e) {
+      console.error(e);
+      alert('Error adding unit');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1021,11 +1188,65 @@ function TanodRosterView() {
           <p className="text-[#8E9299] font-medium text-sm md:text-base">Official Barangay Peacekeeping Force Units</p>
         </div>
         <button 
-          onClick={() => alert("Adding tanod members is restricted to the IT/Admin setup process currently.")}
+          onClick={() => setAddingUnit(true)}
           className="w-full md:w-auto justify-center px-8 py-4 bg-[#FF4B4B] text-white font-black italic rounded-xl hover:scale-105 transition-all flex items-center gap-2 text-xs shadow-xl shadow-red-500/20">
           <Plus className="w-4 h-4" /> ADD UNIT
         </button>
       </div>
+
+      <AnimatePresence>
+        {addingUnit && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#16191F] border border-[#2D3139] w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl flex flex-col p-6"
+            >
+              <h3 className="font-black italic text-xl md:text-2xl tracking-tighter text-white mb-2 uppercase">Add New Unit</h3>
+              <p className="text-[#8E9299] text-xs font-medium mb-6">Register a new Tanod to the system.</p>
+              
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="text-[10px] font-black tracking-[0.2em] text-[#8E9299] uppercase mb-2 block">Officer Name</label>
+                  <input 
+                    type="text"
+                    value={newUnitName}
+                    onChange={(e) => setNewUnitName(e.target.value)}
+                    placeholder="e.g. Juan Cruz"
+                    className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white placeholder-[#8E9299] focus:outline-none focus:border-[#FF4B4B]"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black tracking-[0.2em] text-[#8E9299] uppercase mb-2 block">Email Address</label>
+                  <input 
+                    type="email"
+                    value={newUnitEmail}
+                    onChange={(e) => setNewUnitEmail(e.target.value)}
+                    placeholder="juan@example.com"
+                    className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white placeholder-[#8E9299] focus:outline-none focus:border-[#FF4B4B]"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setAddingUnit(false)}
+                  className="flex-1 py-3 bg-[#252932] text-white font-bold rounded-xl hover:bg-[#2D3139] transition-all text-sm uppercase"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={handleAddUnit}
+                  className="flex-1 py-3 bg-[#FF4B4B] text-white font-bold rounded-xl hover:bg-red-700 transition-all text-sm uppercase"
+                >
+                  Confirm
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {tanods.map((t) => (

@@ -11,6 +11,8 @@ export default function AdminResidents({ profile }: { profile: any }) {
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('pending');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedResident, setSelectedResident] = useState<ResidentProfile | null>(null);
+  const [rejectingResident, setRejectingResident] = useState<{id: string, name: string} | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
 
   useEffect(() => {
     if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod')) return;
@@ -30,7 +32,6 @@ export default function AdminResidents({ profile }: { profile: any }) {
   }, [filter]);
 
   const handleApprove = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to approve ${name}?`)) return;
     try {
       await setDoc(doc(db, 'residents', id), {
         status: 'approved',
@@ -44,13 +45,10 @@ export default function AdminResidents({ profile }: { profile: any }) {
       console.log('Approve user doc success');
     } catch (err: any) {
       console.error('Approve failed:', err);
-      alert('Approve failed: ' + err.message);
     }
   };
 
-  const handleReject = async (id: string, name: string) => {
-    const reason = prompt(`Reason for rejecting ${name}:`);
-    if (reason === null) return;
+  const handleReject = async (id: string, reason: string) => {
     try {
       await setDoc(doc(db, 'residents', id), {
         status: 'rejected',
@@ -60,9 +58,10 @@ export default function AdminResidents({ profile }: { profile: any }) {
       await setDoc(doc(db, 'users', id), {
         status: 'rejected'
       }, { merge: true });
+      setRejectingResident(null);
+      setRejectReason('');
     } catch (err: any) {
       console.error('Reject failed:', err);
-      alert('Reject failed: ' + err.message);
     }
   };
 
@@ -151,7 +150,7 @@ export default function AdminResidents({ profile }: { profile: any }) {
                       <Check className="w-4 h-4" />
                     </button>
                     <button 
-                      onClick={() => handleReject(resident.id, resident.fullName)}
+                      onClick={() => setRejectingResident({ id: resident.id, name: resident.fullName })}
                       className="p-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all"
                     >
                       <X className="w-4 h-4" />
@@ -250,7 +249,7 @@ export default function AdminResidents({ profile }: { profile: any }) {
                       APPROVE
                     </button>
                     <button 
-                      onClick={() => { handleReject(selectedResident.id, selectedResident.fullName); setSelectedResident(null); }}
+                      onClick={() => { setRejectingResident({ id: selectedResident.id, name: selectedResident.fullName }); setSelectedResident(null); }}
                       className="flex-1 py-3 md:py-4 bg-red-600 text-white font-bold rounded-xl md:rounded-2xl hover:bg-red-700 transition-all shadow-xl text-sm"
                     >
                       REJECT
@@ -264,6 +263,45 @@ export default function AdminResidents({ profile }: { profile: any }) {
                     CLOSE PROFILE
                   </button>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Reject Reason Modal */}
+      <AnimatePresence>
+        {rejectingResident && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-[#16191F] border border-[#2D3139] w-full max-w-md rounded-[32px] overflow-hidden shadow-2xl flex flex-col p-6"
+            >
+              <h3 className="font-black italic text-xl md:text-2xl tracking-tighter text-white mb-2">Reject Registration</h3>
+              <p className="text-[#8E9299] text-xs font-medium mb-6">Please provide a reason for rejecting {rejectingResident.name}. This will be shown to the resident.</p>
+              
+              <textarea 
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="e.g. Blurry ID, Invalid Address, Not a resident"
+                className="w-full bg-[#0F1115] border border-[#2D3139] rounded-2xl p-4 text-white placeholder-[#8E9299] mb-6 focus:outline-none focus:border-[#FF4B4B] min-h-[120px]"
+              />
+              
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setRejectingResident(null)}
+                  className="flex-1 py-3 bg-[#252932] text-white font-bold rounded-xl hover:bg-[#2D3139] transition-all text-sm"
+                >
+                  CANCEL
+                </button>
+                <button 
+                  onClick={() => handleReject(rejectingResident.id, rejectReason)}
+                  className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all text-sm"
+                >
+                  CONFIRM REJECT
+                </button>
               </div>
             </motion.div>
           </div>

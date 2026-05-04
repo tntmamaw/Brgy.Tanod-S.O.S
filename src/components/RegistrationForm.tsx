@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { setDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import { MapContainer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Shield, MapPin, Upload, User, Phone, IdCard, Home, Users, CheckCircle, Navigation } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
+import { OfflineTileLayer } from './OfflineTileLayer';
 import { TanodLogo, BackgroundPattern } from './Branding';
 
 // Fix for default marker icons
@@ -25,8 +26,20 @@ function MapUpdater({ center }: { center: [number, number] }) {
   }, [center, map]);
   
   useEffect(() => {
+    let isMounted = true;
+    
+    const safeInvalidate = () => {
+      if (isMounted && map && (map as any)._mapPane) {
+        try {
+          map.invalidateSize({ animate: false });
+        } catch (e) {
+          // Ignore leaflet errors if container is detached
+        }
+      }
+    };
+
     const observer = new window.ResizeObserver(() => {
-      map.invalidateSize();
+      safeInvalidate();
     });
     
     const container = map.getContainer();
@@ -34,13 +47,18 @@ function MapUpdater({ center }: { center: [number, number] }) {
     
     // Multiple fallbacks for React render cycles
     const timers = [
-      setTimeout(() => map.invalidateSize(), 10),
-      setTimeout(() => map.invalidateSize(), 100),
-      setTimeout(() => map.invalidateSize(), 500),
-      setTimeout(() => map.invalidateSize(), 1000)
+      setTimeout(safeInvalidate, 10),
+      setTimeout(safeInvalidate, 100),
+      setTimeout(safeInvalidate, 500),
+      setTimeout(safeInvalidate, 1000)
     ];
 
+    map.whenReady(() => {
+      setTimeout(safeInvalidate, 0);
+    });
+
     return () => {
+      isMounted = false;
       observer.disconnect();
       timers.forEach(clearTimeout);
     };
@@ -393,9 +411,9 @@ export default function RegistrationForm({ onCancel, onComplete }: { onCancel: (
                     className="w-full h-full"
                     scrollWheelZoom={false}
                   >
-                    <TileLayer 
-                      url="https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}"
-                      attribution="Google Maps"
+                    <OfflineTileLayer 
+                      url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      attribution="&copy; <a href=&quot;https://www.openstreetmap.org/copyright&quot;>OpenStreetMap</a> contributors"
                     />
                     <MapUpdater center={[formData.gpsLat, formData.gpsLng]} />
                     <LocationPicker 

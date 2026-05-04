@@ -1,10 +1,10 @@
 import { cacheTile } from './mapDb';
 
 const OCCIDENTAL_MINDORO_BOUNDS = {
-  minLat: 12.1,
-  maxLat: 14.2,
-  minLng: 120.0,
-  maxLng: 121.2
+  minLat: 13.10, // Mamburao specific bounds
+  maxLat: 13.35,
+  minLng: 120.50,
+  maxLng: 120.75
 };
 
 function lat2tile(lat: number, zoom: number) {
@@ -16,7 +16,7 @@ function lng2tile(lon: number, zoom: number) {
 }
 
 export async function downloadRegion(onProgress: (current: number, total: number) => void) {
-  const zoomLevels = [9, 10, 11, 12, 13, 14];
+  const zoomLevels = [9, 10, 11, 12, 13, 14, 15, 16];
   const tasks: { url: string }[] = [];
 
   for (const zoom of zoomLevels) {
@@ -27,9 +27,8 @@ export async function downloadRegion(onProgress: (current: number, total: number
 
     for (let x = startX; x <= endX; x++) {
       for (let y = startY; y <= endY; y++) {
-        // Using OpenStreetMap standard tile URL
-        const s = ['a', 'b', 'c'][Math.floor(Math.random() * 3)];
-        tasks.push({ url: `https://${s}.tile.openstreetmap.org/${zoom}/${x}/${y}.png` });
+        // Use OpenStreetMap to follow guidelines and avoid black/dark tiles
+        tasks.push({ url: `https://tile.openstreetmap.org/${zoom}/${x}/${y}.png` });
       }
     }
   }
@@ -37,19 +36,32 @@ export async function downloadRegion(onProgress: (current: number, total: number
   const total = tasks.length;
   let current = 0;
 
-  // Process in batches to avoid overwhelming
-  const batchSize = 10;
+  // Process in smaller batches
+  const batchSize = 5;
   for (let i = 0; i < tasks.length; i += batchSize) {
     const batch = tasks.slice(i, i + batchSize);
     await Promise.all(batch.map(async (task) => {
-      try {
-        const response = await fetch(task.url);
-        if (response.ok) {
-          const blob = await response.blob();
-          await cacheTile(task.url, blob);
+      let retries = 5;
+      while (retries > 0) {
+        try {
+          const response = await fetch(task.url, { mode: 'cors' });
+          if (response.ok) {
+            const blob = await response.blob();
+            await cacheTile(task.url, blob);
+            break; // Success, exit retry loop
+          } else {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+        } catch (e) {
+          retries--;
+          if (retries === 0) {
+            console.error('Failed to download tile', task.url, e);
+          } else {
+            // Wait before retrying (exponential backoff with jitter)
+            const delay = Math.pow(2, 5 - retries) * 1000 + Math.random() * 2000;
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
         }
-      } catch (e) {
-        console.error('Failed to download tile', task.url, e);
       }
       current++;
       onProgress(current, total);
