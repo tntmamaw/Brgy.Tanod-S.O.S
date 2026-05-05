@@ -69,6 +69,7 @@ import { db as dexieDb } from './lib/mapDb';
 import { startGPSTracking, calculateDistance } from './services/gpsService';
 import { Toaster, toast } from 'react-hot-toast';
 import { scheduleDailyLogReset } from './lib/scheduler';
+import { handleFirestoreError, OperationType } from './lib/firestore-errors';
 
 // Siren sound
 const siren = new Howl({
@@ -141,8 +142,8 @@ export default function App() {
   const effectiveRole = viewOverride || profile?.role;
   const effectiveProfile = profile ? { 
     ...profile, 
-    role: effectiveRole as 'admin' | 'tanod' | 'resident',
-    name: isRuben ? 'RubenLlego' : profile.name
+    role: effectiveRole as UserRole,
+    name: isRuben ? 'RubenLlego (SuperAdmin)' : profile.name
   } : null;
 
   useEffect(() => {
@@ -154,20 +155,27 @@ export default function App() {
       try {
         setUser(firebaseUser);
         if (firebaseUser) {
-          const isAdminEmail = firebaseUser.email === 'rubenlleg12@gmail.com';
+          const isSuperAdminEmail = firebaseUser.email === 'rubenlleg12@gmail.com';
           
           // First check if they have a standard user profile
           const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
           
           if (userDoc.exists()) {
-            setProfile({ id: userDoc.id, ...userDoc.data() } as User);
-          } else if (isAdminEmail) {
-            // Auto-bootstrap master admin
+            const data = userDoc.data();
+            // Force superadmin role if email matches
+            if (isSuperAdminEmail && data.role !== 'superadmin') {
+              await updateDoc(doc(db, 'users', firebaseUser.uid), { role: 'superadmin' });
+              setProfile({ id: userDoc.id, ...data, role: 'superadmin' } as User);
+            } else {
+              setProfile({ id: userDoc.id, ...data } as User);
+            }
+          } else if (isSuperAdminEmail) {
+            // Auto-bootstrap master super admin
             const adminProfile: Partial<User> = {
               uid: firebaseUser.uid,
-              name: firebaseUser.displayName || 'Master Admin',
+              name: 'Ruben Llego (SuperAdmin)',
               email: firebaseUser.email || '',
-              role: 'admin',
+              role: 'superadmin',
               createdAt: new Date().toISOString(),
               status: 'approved'
             };
@@ -185,9 +193,16 @@ export default function App() {
           setProfile(null);
           setResidentProfile(null);
         }
-      } catch (err) {
-        console.error("FATAL: Auth Sync Error:", err);
-        toast.error("Security System Initialization Failed. Retrying...");
+      } catch (err: any) {
+        if (err?.message?.includes('offline')) {
+          console.warn("Auth Sync: Client is offline. Profile data may be delayed.");
+        } else if (err?.message?.includes('permission')) {
+          console.error("CRITICAL: Permission Denied. This usually happens if your AUTH project and DATABASE project do not match.");
+          toast.error("Security System: Permission Denied. Check project configuration.");
+        } else {
+          console.error("Auth Sync Error:", err);
+          toast.error("Security System Synchronization Error. Retrying...");
+        }
       } finally {
         setLoading(false);
       }
@@ -629,29 +644,42 @@ export default function App() {
 function RejectedScreen({ reason, deferredPrompt, onInstall, onLogout }: { reason: string, deferredPrompt?: any, onInstall?: () => void, onLogout: () => void }) {
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+      <div className="scanline" />
       <BackgroundPattern />
+      <div className="absolute inset-0 bg-emergency/5 pointer-events-none" />
+      
       {deferredPrompt && (
         <button
           onClick={onInstall}
-          className="absolute top-8 right-8 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-info/10 text-info font-black border border-info/30 hover:bg-info/20 transition-all text-[10px] tracking-widest font-mono uppercase"
+          className="absolute top-8 right-8 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-card text-info font-black border border-white/10 hover:border-info/40 transition-all text-[10px] tracking-widest font-mono uppercase shadow-lg"
         >
-          <span>📲 INSTALL APP</span>
+          <span>📲 SYSTEM INSTALL</span>
         </button>
       )}
-      <div className="w-24 h-24 bg-emergency/10 rounded-full flex items-center justify-center mb-8 border border-emergency/30 shadow-glow-red animate-pulse">
+
+      <div className="w-24 h-24 bg-emergency/10 rounded-full flex items-center justify-center mb-8 border border-emergency/30 shadow-glow-red animate-flicker">
         <X className="w-12 h-12 text-emergency" />
       </div>
-      <h2 className="text-4xl font-black italic tracking-tighter mb-4 text-white uppercase font-mono">ACCESS DENIED</h2>
-      <p className="text-white/40 max-w-md mb-8 text-lg font-bold uppercase tracking-widest font-mono">Account clearance rejected by administration</p>
+
+      <h2 className="text-5xl font-black italic tracking-tighter mb-4 text-white uppercase font-mono leading-none">ACCESS DENIED</h2>
+      <p className="text-white/30 max-w-md mb-8 text-[10px] font-black uppercase tracking-[0.4em] font-mono">Authentication credentials invalidated</p>
       
-      <div className="glass-panel border-emergency/20 p-8 rounded-[40px] w-full max-w-md mb-12 shadow-glow-red">
-        <p className="text-[10px] font-black uppercase text-emergency tracking-[0.3em] mb-4 font-mono">Reason for rejection</p>
-        <p className="text-white font-bold italic text-lg font-mono leading-relaxed">"{reason}"</p>
+      <div className="glass-panel border-emergency/20 p-10 rounded-[48px] w-full max-w-md mb-12 shadow-glow-red relative overflow-hidden">
+        <div className="scanline opacity-20" />
+        <p className="text-[10px] font-black uppercase text-emergency tracking-[0.3em] mb-6 font-mono leading-none">REJECTION INTEL</p>
+        <p className="text-white font-bold italic text-xl font-mono leading-relaxed bg-black/20 p-4 rounded-2xl border border-white/5">
+          "{reason}"
+        </p>
+        <div className="mt-6 flex justify-center gap-2">
+          <div className="w-1 h-1 bg-emergency rounded-full animate-pulse" />
+          <div className="w-1 h-1 bg-emergency rounded-full animate-pulse delay-75" />
+          <div className="w-1 h-1 bg-emergency rounded-full animate-pulse delay-150" />
+        </div>
       </div>
 
       <button 
         onClick={onLogout}
-        className="px-12 py-5 bg-brand-card border border-white/10 text-white font-black italic rounded-2xl hover:bg-brand-bg hover:border-emergency transition-all shadow-xl font-mono tracking-widest uppercase"
+        className="px-14 py-6 bg-brand-card border border-white/10 text-white font-black italic rounded-3xl hover:bg-brand-bg hover:border-emergency/50 hover:shadow-glow-red transition-all shadow-2xl font-mono tracking-[0.2em] uppercase text-xs animate-pulse"
       >
         TERMINATE SESSION
       </button>
@@ -662,32 +690,48 @@ function RejectedScreen({ reason, deferredPrompt, onInstall, onLogout }: { reaso
 function PendingApproval({ user, deferredPrompt, onInstall, onLogout }: { user: FirebaseUser, deferredPrompt?: any, onInstall?: () => void, onLogout: () => void }) {
   return (
     <div className="min-h-screen bg-brand-bg flex flex-col items-center justify-center p-6 text-center relative overflow-hidden">
+      <div className="scanline" />
       <BackgroundPattern />
+      
       {deferredPrompt && (
         <button
           onClick={onInstall}
-          className="absolute top-8 right-8 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-info/10 text-info font-black border border-info/30 hover:bg-info/20 transition-all text-[10px] tracking-widest font-mono uppercase"
+          className="absolute top-8 right-8 z-50 flex items-center gap-2 px-4 py-2 rounded-xl bg-brand-card text-info font-black border border-white/10 hover:border-info/40 transition-all text-[10px] tracking-widest font-mono uppercase shadow-lg"
         >
-          <span>📲 INSTALL APP</span>
+          <span>📲 SYSTEM INSTALL</span>
         </button>
       )}
-      <div className="w-24 h-24 bg-caution/10 rounded-[32px] flex items-center justify-center mb-8 border border-caution/30 shadow-lg animate-pulse">
+
+      <div className="w-24 h-24 bg-caution/10 rounded-[32px] flex items-center justify-center mb-8 border border-caution/30 shadow-2xl animate-pulse">
         <Clock className="w-12 h-12 text-caution" />
       </div>
-      <h1 className="text-4xl font-black italic tracking-tighter mb-4 text-white uppercase font-mono">CLEARANCE PENDING</h1>
-      <p className="text-white/40 max-w-md mb-12 text-lg font-bold uppercase tracking-widest font-mono">Profile Verification in Progress</p>
+
+      <h1 className="text-5xl font-black italic tracking-tighter mb-4 text-white uppercase font-mono leading-none">CLEARANCE PENDING</h1>
+      <p className="text-white/30 max-w-md mb-12 text-[10px] font-black uppercase tracking-[0.4em] font-mono leading-none">Security appraisal in progress</p>
       
-      <div className="glass-panel border-white/5 p-8 rounded-[40px] w-full max-w-md mb-12">
-        <p className="text-white/60 text-sm leading-relaxed font-medium">
-          Resident profile for <span className="text-white font-black italic">{user.displayName}</span> is under evaluation. Automated SMS dispatch will trigger upon approval.
+      <div className="glass-panel border-white/5 p-10 rounded-[48px] w-full max-w-md mb-12 relative overflow-hidden">
+        <div className="scanline opacity-10" />
+        <p className="text-white/50 text-sm leading-relaxed font-mono">
+          Resident profile for <span className="text-white font-black italic text-lg">{user.displayName}</span> is currently under <span className="text-caution font-black">Level 1 Evaluation</span>. 
         </p>
+        <div className="mt-8 flex flex-col items-center gap-3">
+          <div className="w-full bg-white/5 h-1 rounded-full overflow-hidden">
+            <motion.div 
+               initial={{ width: 0 }}
+               animate={{ width: "65%" }}
+               transition={{ duration: 2, repeat: Infinity, repeatType: "reverse" }}
+               className="h-full bg-caution shadow-[0_0_10px_rgba(245,158,11,0.5)]" 
+            />
+          </div>
+          <p className="text-[8px] font-black uppercase text-white/20 tracking-[0.5em] font-mono">Verifying Credentials...</p>
+        </div>
       </div>
 
       <button 
         onClick={onLogout} 
-        className="px-12 py-5 bg-brand-card border border-white/10 text-white font-black italic rounded-2xl hover:bg-brand-bg hover:border-caution transition-all shadow-xl font-mono tracking-widest uppercase flex items-center gap-3"
+        className="px-14 py-6 bg-brand-card border border-white/10 text-white font-black italic rounded-3xl hover:bg-brand-bg hover:border-caution/50 hover:shadow-[0_0_30px_rgba(245,158,11,0.2)] transition-all shadow-2xl font-mono tracking-[0.2em] uppercase text-xs flex items-center gap-4"
       >
-        <LogOut className="w-5 h-5 text-caution" /> Sign Out
+        <LogOut className="w-4 h-4 text-caution" /> ABORT SESSION
       </button>
     </div>
   );
@@ -755,12 +799,10 @@ function LoginView({ onLogin, onRegister, isLoggingIn, deferredPrompt, onInstall
         <button 
           disabled={isLoggingIn}
           onClick={handleRegister}
-          className="w-full glass-panel border-white/10 text-white font-black py-6 rounded-3xl hover:bg-white/5 transition-all disabled:opacity-50 uppercase tracking-widest font-mono text-xs"
+          className="w-full glass-panel border-white/10 text-white font-black py-4 rounded-3xl hover:bg-white/5 transition-all disabled:opacity-50 uppercase tracking-widest font-mono text-xs"
         >
           Resident Registration
         </button>
-
-
       </div>
       
       <div className="absolute bottom-8 text-[10px] font-black text-white/10 uppercase tracking-[0.5em] font-mono">
@@ -783,14 +825,14 @@ function RoleSelection({ onSelect, onRegister, deferredPrompt, onInstall }: { on
         </button>
       )}
       <h2 className="text-4xl font-black italic tracking-tighter mb-2 text-white uppercase font-mono z-10">ASSIGNMENT</h2>
-      <p className="text-white/40 text-lg mb-16 uppercase tracking-[0.3em] font-mono z-10">Select operational profile</p>
+      <p className="text-white/40 text-[10px] font-black mb-16 uppercase tracking-[0.5em] font-mono z-10">Select operational profile</p>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl z-10">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-6xl z-10">
         <RoleCard 
           title="Resident Portal" 
-          desc="Standard access for profile management and SOS alerts." 
+          desc="Request SOS assistance and view local safety advisories." 
           icon={UserIcon} 
-          onClick={onRegister}
+          onClick={() => onSelect('resident')}
           color="emergency"
         />
         <RoleCard 
@@ -799,6 +841,13 @@ function RoleSelection({ onSelect, onRegister, deferredPrompt, onInstall }: { on
           icon={Shield} 
           onClick={() => onSelect('tanod')}
           color="info"
+        />
+        <RoleCard 
+          title="Admin Command" 
+          desc="High-level oversight, roster management, and archives." 
+          icon={LayoutDashboard} 
+          onClick={() => onSelect('admin')}
+          color="caution"
         />
       </div>
     </div>
@@ -927,8 +976,8 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
         queueSOS(alertData);
         toast.error('Offline Mode: Alert queued for sync.', { icon: '📡' });
       }
-    } catch (err) {
-      console.error('Fatal SOS error:', err);
+    } catch (err: any) {
+      handleFirestoreError(err, OperationType.WRITE, 'alerts');
       toast.error('Critical failure. Please call hotlines directly.');
     } finally {
       setSending(false);
@@ -1310,7 +1359,7 @@ function RecentAlerts({ residentId }: { residentId: string }) {
 function DashboardView({ profile, alerts, patrols, onTabChange, isOnline, deferredPrompt, onInstall }: { profile: User, alerts: Alert[], patrols: PatrolLocation[], onTabChange: (tab: string) => void, isOnline: boolean, deferredPrompt: any, onInstall: () => void }) {
   if (profile.role === 'resident') return <ResidentDashboard profile={profile} patrols={patrols} isOnline={isOnline} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
   if (profile.role === 'tanod') return <TanodDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
-  if (profile.role === 'admin') return <AdminDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
+  if (profile.role === 'admin' || profile.role === 'superadmin') return <AdminDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
   return <div className="text-center p-12 text-[#8E9299]">Unauthorized Access</div>;
 }
 
@@ -1386,9 +1435,8 @@ function TanodRosterView() {
       setAddingUnit(false);
       setNewUnitName('');
       setNewUnitEmail('');
-    } catch (e) {
-      console.error(e);
-      alert('Error adding unit');
+    } catch (e: any) {
+      handleFirestoreError(e, OperationType.WRITE, 'users');
     }
   };
 

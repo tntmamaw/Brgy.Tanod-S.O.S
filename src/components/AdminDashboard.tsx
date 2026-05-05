@@ -33,6 +33,8 @@ import { useIncidentStore } from '../store/useIncidentStore';
 import { useTanodStore } from '../store/useTanodStore';
 import { logIncidentAction } from '../services/logService';
 
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
+
 export default function AdminDashboard({ profile, onTabChange, deferredPrompt, onInstall }: { profile: User | null, onTabChange: (tab: string) => void, deferredPrompt?: any, onInstall?: () => void }) {
   const { alerts } = useIncidentStore();
   const { patrols } = useTanodStore();
@@ -46,7 +48,7 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
   });
 
   useEffect(() => {
-    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod')) return;
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod' && profile.role !== 'superadmin')) return;
 
     // Play loud siren for 10 seconds if there's a new pending alert
     const hasActive = alerts.some(a => a.status === 'pending');
@@ -67,18 +69,22 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
   }, [alerts, profile]);
 
   useEffect(() => {
-    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod')) return;
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod' && profile.role !== 'superadmin')) return;
 
     // Stats
     const fetchStats = async () => {
-      const residentsSnapshot = await getCountFromServer(query(collection(db, 'residents'), where('status', '==', 'approved')));
-      const pendingRegSnapshot = await getCountFromServer(query(collection(db, 'residents'), where('status', '==', 'pending')));
-      
-      setStats(prev => ({
-        ...prev,
-        residents: residentsSnapshot.data().count,
-        pendingReg: pendingRegSnapshot.data().count
-      }));
+      try {
+        const residentsSnapshot = await getCountFromServer(query(collection(db, 'residents'), where('status', '==', 'approved')));
+        const pendingRegSnapshot = await getCountFromServer(query(collection(db, 'residents'), where('status', '==', 'pending')));
+        
+        setStats(prev => ({
+          ...prev,
+          residents: residentsSnapshot.data().count,
+          pendingReg: pendingRegSnapshot.data().count
+        }));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, 'residents-stats');
+      }
     };
     
     // Live Stats
@@ -86,7 +92,7 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
     const unsubActiveStats = onSnapshot(activeAlertsQ, (snapshot) => {
       setStats(prev => ({ ...prev, activeAlerts: snapshot.size }));
     }, (error) => {
-      console.error("Dashboard Active Stats listener error:", error);
+      handleFirestoreError(error, OperationType.GET, 'alerts-status-stats');
     });
 
     fetchStats();
@@ -135,15 +141,14 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
           const newRosterStatus = status === 'resolved' ? 'On-Duty' : status;
           await updateDoc(doc(db, 'users', tanodId), { status: newRosterStatus });
         } catch (e) {
-          console.warn('Failed to update Tanod status from Admin dashboard:', e);
+          handleFirestoreError(e, OperationType.UPDATE, `users/${tanodId}`);
         }
       }
       
       // Log for audit
       await logIncidentAction({ ...alert, ...updateData });
     } catch (error: any) {
-      console.error("Error updating alert:", error);
-      window.alert('Permission Denied: Ensure you are logged in as Admin/Tanod.');
+      handleFirestoreError(error, OperationType.WRITE, `alerts/${alert.id}`);
     }
   };
 
@@ -155,7 +160,7 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
     return onSnapshot(q, (snapshot) => {
       setOnDutyTanods(snapshot.docs.map(d => ({ uid: d.id, ...d.data() } as User)));
     }, (error) => {
-      console.error("Dashboard Tanods listener error:", error);
+      handleFirestoreError(error, OperationType.GET, 'users-tanods');
     });
   }, [profile]);
 

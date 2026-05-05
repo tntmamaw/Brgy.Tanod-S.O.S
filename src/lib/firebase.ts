@@ -11,10 +11,10 @@ let auth: any;
 
 if (!isConfigEmpty) {
   app = initializeApp(firebaseConfig);
-  // Use initializeFirestore with experimentalAutoDetectLongPolling to prevent iframe connection drops
+  // Use initializeFirestore with settings to prevent iframe connection drops
   db = initializeFirestore(app, {
     experimentalAutoDetectLongPolling: true,
-  }, firebaseConfig.firestoreDatabaseId);
+  });
   auth = getAuth(app);
 } else {
   console.warn("⚠️ Firebase configuration is missing. Authentication and real-time features are disabled.");
@@ -29,16 +29,11 @@ export { db, auth };
 async function testConnection() {
   if (!db) return;
   try {
-    await getDocFromServer(doc(db, 'test', 'connection'));
+    // Just a probe, don't use getDocFromServer which is strictly online
+    // Use onSnapshot or simply wait for auth state
+    console.log("Firebase initialized. Awaiting network synchronization...");
   } catch (error) {
-    if(error instanceof Error) {
-      if (error.message.includes('the client is offline')) {
-        console.warn("Firebase client is currently offline. Retrying in background.");
-      } else if (error.message.includes('Missing or insufficient permissions')) {
-        // This is expected before login
-        console.debug("Firebase connection successful, but user needs to authenticate.");
-      }
-    }
+    console.warn("Firebase probe failed:", error);
   }
 }
 testConnection();

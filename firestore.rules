@@ -23,11 +23,11 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isMasterAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserRole() == 'admin');
+      return isMasterAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserRole() == 'admin' || getUserRole() == 'superadmin'));
     }
 
     function isTanod() {
-      return isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && getUserRole() == 'tanod');
+      return isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserRole() == 'tanod'));
     }
 
     // Default deny

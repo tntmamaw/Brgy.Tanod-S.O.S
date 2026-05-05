@@ -21,7 +21,7 @@ export default function PatrolScheduler({ profile }: { profile: any }) {
   const [notes, setNotes] = useState('');
 
   useEffect(() => {
-    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod') || !db) return;
+    if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod' && profile.role !== 'superadmin') || !db) return;
 
     // Listen for shifts
     const qShift = query(collection(db, 'shifts'), orderBy('startTime', 'desc'));

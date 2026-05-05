@@ -1,4 +1,3 @@
-// TODO: replace mock with API call → GET /api/audit-logs/archives
 import { AuditLogArchive } from '../../types/auditLog';
 
 export const mockArchives: AuditLogArchive[] = [

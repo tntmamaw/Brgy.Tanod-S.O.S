@@ -1,4 +1,4 @@
-export type UserRole = 'resident' | 'tanod' | 'admin' | 'guest';
+export type UserRole = 'resident' | 'tanod' | 'admin' | 'superadmin' | 'guest';
 export type RegistryStatus = 'pending' | 'approved' | 'rejected';
 export type AlertStatus = 'pending' | 'responding' | 'resolved';
 export type IncidentStatus = 'resolved' | 'ongoing' | 'referred';
