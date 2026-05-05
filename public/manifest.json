@@ -1,14 +1,6 @@
 {
   "short_name": "TanodSOS",
   "name": "Barangay Tanod S.O.S.",
-  "icons": [
-    {
-      "src": "/logo_official.png",
-      "type": "image/png",
-      "sizes": "1024x1024",
-      "purpose": "any maskable"
-    }
-  ],
   "start_url": ".",
   "display": "standalone",
   "theme_color": "#0F172A",
