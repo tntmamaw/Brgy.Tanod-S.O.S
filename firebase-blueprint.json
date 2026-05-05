@@ -118,9 +118,23 @@
         "lastUpdate": { "type": "string", "format": "date-time" }
       },
       "required": ["tanodId", "tanodName", "location", "isActive", "lastUpdate"]
+    },
+    "SystemStatus": {
+      "title": "System Status",
+      "description": "Global system flags (e.g. manual siren)",
+      "type": "object",
+      "properties": {
+        "sirenActive": { "type": "boolean" },
+        "sirenTriggeredBy": { "type": "string" },
+        "sirenTriggeredAt": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
+    "system": {
+      "schema": "SystemStatus",
+      "description": "Global system configurations and states"
+    },
     "residents": {
       "schema": "ResidentProfile",
       "description": "Resident application and profile details"

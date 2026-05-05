@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { User, Alert } from '../types';
@@ -36,13 +36,14 @@ export default function DispatchModal({ alert, onClose }: DispatchModalProps) {
         respondedAt: new Date().toISOString()
       };
 
-      await updateDoc(doc(db, 'alerts', alert.id), updateData);
+      // Use setDoc merge true to be robust against missing documents
+      await setDoc(doc(db, 'alerts', alert.id), updateData, { merge: true });
 
       // Update Tanod status in roster
       try {
-        await updateDoc(doc(db, 'users', selectedTanod), { 
+        await setDoc(doc(db, 'users', selectedTanod), { 
           status: 'responding' 
-        });
+        }, { merge: true });
       } catch (e) {
         console.warn('Failed to update Tanod status in roster:', e);
       }

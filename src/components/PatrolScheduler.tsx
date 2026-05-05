@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, orderBy } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, orderBy, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Shift, User } from '../types';
 import { Calendar, Clock, MapPin, User as UserIcon, Plus, X, Trash2, CheckCircle2, Play } from 'lucide-react';
@@ -80,7 +80,7 @@ export default function PatrolScheduler({ profile }: { profile: any }) {
   const updateShiftStatus = async (id: string, status: Shift['status']) => {
     if (!db) return;
     try {
-      await updateDoc(doc(db, 'shifts', id), { status });
+      await setDoc(doc(db, 'shifts', id), { status }, { merge: true });
     } catch (error) {
       console.error("Error updating shift status:", error);
     }

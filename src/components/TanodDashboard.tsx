@@ -1,28 +1,23 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, getDocs, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { Alert, User } from '../types';
-import { AlertTriangle, MapPin, Zap, CheckCircle, Shield } from 'lucide-react';
+import { AlertTriangle, MapPin, Zap, CheckCircle, Shield, Volume2, VolumeX, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Howl } from 'howler';
 import { PoliceLights } from './PoliceLights';
+import AboutModal from './AboutModal';
 import { InstallAppButton } from './InstallAppButton';
-
-const alarm = new Howl({
-  src: ['https://assets.mixkit.co/active_storage/sfx/1004/1004-preview.mp3'],
-  loop: true,
-  volume: 0.6,
-});
 
 import { useIncidentStore } from '../store/useIncidentStore';
 import { logIncidentAction } from '../services/logService';
 
-export default function TanodDashboard({ profile, onTabChange, deferredPrompt, onInstall }: { profile: User | null, onTabChange: (tab: string) => void, deferredPrompt?: any, onInstall?: () => void }) {
+export default function TanodDashboard({ profile, onTabChange, deferredPrompt, onInstall, sirenActive, onToggleSiren }: { profile: User | null, onTabChange: (tab: string) => void, deferredPrompt?: any, onInstall?: () => void, sirenActive: boolean, onToggleSiren: () => void }) {
   const { alerts } = useIncidentStore();
   const [isFlashing, setIsFlashing] = useState(false);
   const [shiftLog, setShiftLog] = useState<Alert[]>([]);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
@@ -31,31 +26,23 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
 
   // Filter alerts for this tanod: pending OR specifically assigned/responded by them
   const filteredAlerts = alerts.filter(a => 
-    a.status === 'pending' || 
-    a.assignedTo === profile?.uid || 
-    a.respondedBy === profile?.uid
+    a.status !== 'resolved' && a.status !== 'cancelled' &&
+    (a.status === 'pending' || 
+     a.assignedTo === profile?.uid || 
+     a.respondedBy === profile?.uid)
   );
 
   useEffect(() => {
     if (!profile || profile.role !== 'tanod') return;
 
-    // Play loud siren for 10 seconds if there's a new pending alert
+    // Handle flashing lights only, sound is global in App.tsx
     const hasPending = filteredAlerts.some(a => a.status === 'pending');
-    if (hasPending) {
-       if (!alarm.playing()) {
-         alarm.volume(1.0);
-         alarm.play();
-         setIsFlashing(true);
-         setTimeout(() => { 
-           alarm.stop(); 
-           setIsFlashing(false);
-         }, 10000);
-       }
+    if (hasPending || sirenActive) {
+      setIsFlashing(true);
     } else {
-      alarm.stop();
       setIsFlashing(false);
     }
-  }, [filteredAlerts, profile]);
+  }, [filteredAlerts, profile, sirenActive]);
 
   useEffect(() => {
     if (!profile || profile.role !== 'tanod' || !db) return;
@@ -73,7 +60,6 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
 
     return () => {
       unsubLog();
-      alarm.stop();
     };
   }, [profile]);
 
@@ -122,16 +108,17 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
         });
       }
 
-      await updateDoc(doc(db, 'alerts', alert.id), updateData);
+      // Use setDoc merge true to be robust against missing documents
+      await setDoc(doc(db, 'alerts', alert.id), updateData, { merge: true });
 
       // Update our status in the roster
       if (profile?.uid) {
         try {
           // If resolved, go back to On-Duty, otherwise match alert status
           const newStatus = updateData.status === 'resolved' ? 'On-Duty' : updateData.status;
-          await updateDoc(doc(db, 'users', profile.uid), { status: newStatus });
+          await setDoc(doc(db, 'users', profile.uid), { status: newStatus }, { merge: true });
         } catch (e) {
-          console.warn('Failed to update Tanod roster status:', e);
+          console.warn('[TanodDashboard] Failed to update Tanod roster status:', e);
         }
       }
 
@@ -177,18 +164,98 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
       animate="show"
       className="space-y-6 md:space-y-8 pb-20"
     >
+      <PoliceLights active={isFlashing} />
+      
+      <motion.div variants={itemVariants} className="flex flex-col md:flex-row md:justify-between items-start md:items-center gap-4 mb-8">
+        <div>
+          <h2 className="text-3xl font-black italic tracking-tighter uppercase text-white font-mono leading-none flex items-center gap-3">
+            <Shield className="w-8 h-8 text-success shadow-glow-green" />
+            Tanod Responder Portal
+          </h2>
+          <p className="text-[10px] font-mono text-white/30 uppercase tracking-[0.3em] mt-2 bg-white/5 inline-block px-3 py-1 rounded-full border border-white/5">Securing Brgy. Intelligence Network</p>
+        </div>
+        <button
+          onClick={() => setIsAboutOpen(true)}
+          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+          id="tanod-about-btn"
+        >
+          <Info className="w-4 h-4 text-white/40 group-hover:text-white transition-colors" />
+          <span className="text-[10px] font-bold text-white/40 group-hover:text-white uppercase tracking-[0.25em] font-mono">Project Vision & Guidelines</span>
+        </button>
+      </motion.div>
+
+      <AboutModal 
+        isOpen={isAboutOpen} 
+        onClose={() => setIsAboutOpen(false)} 
+        role={profile?.role} 
+      />
+
       {deferredPrompt && (
         <motion.button
           variants={itemVariants}
           onClick={onInstall}
-          className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-[32px] bg-info/10 text-info font-black border border-info/30 hover:bg-info/20 mb-8 transition-all hover:scale-[1.01] active:scale-95 uppercase tracking-[0.2em] font-mono shadow-[0_0_20px_rgba(59,130,246,0.2)] group"
+          className="w-full flex items-center justify-center gap-3 px-6 py-5 rounded-[32px] bg-info/10 text-info font-black border border-info/30 hover:bg-info/20 mb-4 transition-all hover:scale-[1.01] active:scale-95 uppercase tracking-[0.2em] font-mono shadow-[0_0_20px_rgba(59,130,246,0.2)] group"
         >
           <span className="text-lg group-hover:scale-125 transition-transform">📲</span>
           <span>INSTALL TANOD MOBILE APP</span>
         </motion.button>
       )}
-      <PoliceLights active={isFlashing} />
-      <InstallAppButton />
+
+      <motion.div variants={itemVariants}>
+        <div className="glass-panel bg-brand-bg/60 backdrop-blur-3xl border-white/5 rounded-[40px] p-8 text-white shadow-2xl overflow-hidden relative group border-t border-l border-white/10">
+           <div className="absolute top-8 right-8 flex items-center justify-center">
+             <div className="absolute w-12 h-12 bg-success/20 rounded-full animate-pulse blur-2xl shadow-[0_0_15px_rgba(34,197,94,0.4)]" />
+             <span className="relative text-2xl drop-shadow-[0_0_8px_rgba(34,197,94,0.8)] animate-pulse">🟢</span>
+           </div>
+           
+           <div className="relative z-10">
+             <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-2 font-mono flex items-center gap-2">
+               <span className="w-1.5 h-1.5 rounded-full bg-success animate-ping" />
+               Service Status
+             </p>
+             <div className="flex flex-col">
+               <span className="text-4xl font-black italic tracking-tighter uppercase font-mono text-white leading-none">STATUS ON ACTIVE</span>
+               <div className="flex items-center gap-1 mt-1">
+                 <span className="text-4xl font-black italic tracking-tighter uppercase font-mono text-success leading-none">DUTY</span>
+               </div>
+             </div>
+             <div className="mt-8 flex items-center justify-between">
+               <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center">
+                   <Shield className="w-5 h-5 text-success/60" />
+                 </div>
+                 <div>
+                   <p className="text-[10px] opacity-40 uppercase tracking-widest font-mono font-black border-l border-success/30 pl-2">Designated Officer</p>
+                   <p className="text-sm font-bold uppercase italic tracking-tight font-mono border-l border-success/30 pl-2">{profile?.name}</p>
+                 </div>
+               </div>
+
+               <button 
+                onClick={onToggleSiren}
+                className={cn(
+                  "p-4 rounded-2xl border transition-all flex items-center gap-2 font-mono text-[10px] font-black uppercase tracking-widest group shadow-2xl",
+                  sirenActive 
+                    ? "bg-emergency border-white/20 text-white animate-pulse" 
+                    : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:border-white/20"
+                )}
+               >
+                 {sirenActive ? (
+                   <>
+                    <VolumeX className="w-4 h-4 group-hover:scale-110" /> Stop Siren
+                   </>
+                 ) : (
+                   <>
+                    <Volume2 className="w-4 h-4 group-hover:scale-110" /> Test Siren
+                   </>
+                 )}
+               </button>
+             </div>
+           </div>
+           
+           <Shield className="absolute -bottom-10 -right-10 w-48 h-48 opacity-[0.03] group-hover:rotate-12 transition-transform text-white pointer-events-none" />
+           <div className="absolute inset-0 bg-gradient-to-br from-success/5 to-transparent pointer-events-none" />
+        </div>
+      </motion.div>
       <motion.div variants={itemVariants} className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
         <div className="lg:col-span-2 space-y-4 md:space-y-6">
           <div className="flex items-center justify-between glass-panel p-4 rounded-3xl mb-2">
@@ -342,13 +409,8 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
              </div>
           </div>
           
-          <div className="bg-info rounded-[32px] p-6 text-white shadow-lg overflow-hidden relative group">
-             <div className="relative z-10">
-               <p className="text-[10px] font-black uppercase tracking-widest opacity-60 mb-1 font-mono">Status</p>
-               <p className="text-2xl font-black italic tracking-tighter uppercase font-mono">ON ACTIVE DUTY</p>
-               <p className="text-[10px] mt-4 opacity-80 uppercase tracking-tight font-mono">Officer: {profile?.name}</p>
-             </div>
-             <Shield className="absolute -bottom-6 -right-6 w-32 h-32 opacity-10 group-hover:rotate-12 transition-transform" />
+          <div className="pt-2">
+            <InstallAppButton />
           </div>
         </div>
       </motion.div>

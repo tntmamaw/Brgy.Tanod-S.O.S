@@ -11,13 +11,11 @@ service cloud.firestore {
       return isSignedIn() && request.auth.token.email == 'rubenlleg12@gmail.com';
     }
 
-    // Role-based helpers using data fields instead of recursive get() lookups 
-    // where possible (or just trust the user profile read)
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // We check roles based on the 'users' collection
+    // Role-based helpers using get() lookups
     function getUserRole() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
@@ -30,14 +28,13 @@ service cloud.firestore {
       return isAdmin() || (isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (getUserRole() == 'tanod'));
     }
 
-    // Default deny
-    match /{document=**} {
-      allow read, write: if false;
-    }
+    // ==========================================
+    // COLLECTION RULES
+    // ==========================================
 
     // User Profiles
     match /users/{userId} {
-      allow read: if isSignedIn(); // Allow all signed in users to read profiles (needed for names/roles)
+      allow read: if isSignedIn();
       allow write: if isMasterAdmin() || isOwner(userId);
     }
 
@@ -49,39 +46,57 @@ service cloud.firestore {
 
     // Emergency Alerts
     match /alerts/{alertId} {
-      allow read: if isSignedIn();
+      // Residents can only list their own alerts, Tanods/Admins can see everything
+      allow read: if isSignedIn() && (isTanod() || resource.data.residentId == request.auth.uid);
       allow create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow update: if isSignedIn() && (isTanod() || resource.data.residentId == request.auth.uid);
       allow delete: if isAdmin();
     }
 
     // Incidents (Archived/Logged alerts/reports)
     match /incidents/{incidentId} {
       allow read: if isSignedIn();
-      allow write: if isTanod() || isMasterAdmin();
+      allow write: if isTanod();
     }
 
     // Patrol Tracking
     match /patrols/{patrolId} {
       allow read: if isSignedIn();
-      allow write: if isTanod() || isMasterAdmin();
+      allow write: if isTanod();
     }
 
     // Shifts & Scheduling
     match /shifts/{shiftId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow write: if isTanod(); // Tanods need to confirm/decline, Admins create
     }
 
-    // Tanod Data (Mirror of Supabase)
+    // Tanod Data (GPS Mirror)
     match /tanods/{tanodId} {
       allow read: if isSignedIn();
       allow write: if isTanod() || isOwner(tanodId);
+    }
+
+    // System Config & Global Siren
+    match /system/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isTanod(); // Both Admins and Tanods can toggle siren
+    }
+
+    // Audit Logs (Missing previously)
+    match /audit_logs/{logId} {
+      allow read: if isTanod();
+      allow write: if isTanod();
     }
     
     // System Connection Test
     match /test/connection {
       allow read: if true;
+    }
+
+    // Global Catch-all (Deny anything else)
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

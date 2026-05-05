@@ -27,8 +27,8 @@ export default function IncidentForm({ profile, onClose }: IncidentFormProps) {
     
     setSubmitting(true);
     try {
-      let adminName = profile.role === 'admin' ? profile.name : 'Unknown Admin';
-      if (profile.role !== 'admin') {
+      let adminName = (profile.role === 'admin' || profile.role === 'superadmin') ? profile.name : 'Unknown Admin';
+      if (profile.role !== 'admin' && profile.role !== 'superadmin') {
         try {
           const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
           const adminDocs = await getDocs(adminQuery);

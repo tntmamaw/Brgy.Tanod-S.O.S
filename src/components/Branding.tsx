@@ -1,212 +1,32 @@
 import { cn } from '../lib/utils';
 
-/* ── LOGO SVG COMPONENT ───────────────────────────────────── */
+/* ── LOGO IMAGE COMPONENT ─────────────────────────────────── */
 export function TanodLogo({ size = 200, animated = true, className }: { size?: number, animated?: boolean, className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <defs>
-        <radialGradient id="shieldGrad" cx="50%" cy="35%" r="65%">
-          <stop offset="0%" stopColor="#1a0a0a" />
-          <stop offset="100%" stopColor="#0a0505" />
-        </radialGradient>
-        <radialGradient id="glowRed" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
-        </radialGradient>
-        <radialGradient id="glowAmber" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
-        </radialGradient>
-        <linearGradient id="shieldStroke" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#ef4444" />
-          <stop offset="50%" stopColor="#dc2626" />
-          <stop offset="100%" stopColor="#7f1d1d" />
-        </linearGradient>
-        <linearGradient id="sunGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#fbbf24" />
-          <stop offset="100%" stopColor="#f59e0b" />
-        </linearGradient>
-        <linearGradient id="topEdge" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#ef4444" stopOpacity="0" />
-          <stop offset="30%" stopColor="#ef4444" stopOpacity="1" />
-          <stop offset="70%" stopColor="#ef4444" stopOpacity="1" />
-          <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
-        </linearGradient>
-        <filter id="glow">
-          <feGaussianBlur stdDeviation="2.5" result="coloredBlur" />
-          <feMerge>
-            <feMergeNode in="coloredBlur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter id="strongGlow">
-          <feGaussianBlur stdDeviation="4" result="coloredBlur" />
-          <feMerge>
-            <feMergeNode in="coloredBlur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <filter id="softGlow">
-          <feGaussianBlur stdDeviation="6" result="coloredBlur" />
-          <feMerge>
-            <feMergeNode in="coloredBlur" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <clipPath id="shieldClip">
-          <path d="M100 18 L168 42 L168 95 Q168 145 100 178 Q32 145 32 95 L32 42 Z" />
-        </clipPath>
-      </defs>
-
-      {/* ── OUTER GLOW HALO ── */}
-      <ellipse cx="100" cy="100" rx="80" ry="80" fill="url(#glowRed)" />
-
-      {/* ── SHIELD BODY ── */}
-      <path
-        d="M100 18 L168 42 L168 95 Q168 145 100 178 Q32 145 32 95 L32 42 Z"
-        fill="url(#shieldGrad)"
-        stroke="url(#shieldStroke)"
-        strokeWidth="2.5"
-        filter="url(#glow)"
+    <div className={cn("relative flex items-center justify-center", className)} style={{ width: size, height: size }}>
+      <img 
+        src="/logo_official.png" 
+        alt="Brgy. Tanod S.O.S. Logo" 
+        className="w-full h-full object-contain drop-shadow-[0_0_15px_rgba(239,68,68,0.3)] transition-transform hover:scale-105 duration-500"
       />
-
-      {/* ── SHIELD INNER BEVEL ── */}
-      <path
-        d="M100 26 L160 47 L160 95 Q160 140 100 169 Q40 140 40 95 L40 47 Z"
-        fill="none"
-        stroke="#ef444422"
-        strokeWidth="1"
-      />
-
-      {/* ── INNER DECORATIVE LINES (tactical cuts) ── */}
-      <path d="M100 26 L100 169" stroke="#ef444415" strokeWidth="0.75" />
-      <path d="M40 95 L160 95" stroke="#ef444415" strokeWidth="0.75" />
-
-      {/* ── TOP HORIZONTAL ACCENT LINE ── */}
-      <line x1="55" y1="60" x2="145" y2="60"
-        stroke="url(#topEdge)" strokeWidth="1" opacity="0.6" />
-
-      {/* ── PHILIPPINE SUN (8 rays) ── */}
-      <g transform="translate(100, 96)" filter="url(#softGlow)">
-        {/* Sun rays */}
-        {[...Array(8)].map((_, i) => {
-          const angle = (i * 45 * Math.PI) / 180;
-          const x1 = Math.cos(angle) * 13;
-          const y1 = Math.sin(angle) * 13;
-          const x2 = Math.cos(angle) * 22;
-          const y2 = Math.sin(angle) * 22;
-          return (
-            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2}
-              stroke="#f59e0b" strokeWidth="2" strokeLinecap="round"
-              opacity="0.9"
-            />
-          );
-        })}
-        {/* Sun circle */}
-        <circle cx="0" cy="0" r="10" fill="url(#sunGrad)" />
-        <circle cx="0" cy="0" r="5" fill="#fde68a" opacity="0.9" />
-      </g>
-
-      {/* S.O.S TEXT (Secondary) */}
-      <text
-        x="100" y="137"
-        fontFamily="'Space Mono', monospace"
-        fontSize="14"
-        fontWeight="700"
-        fill="#ef4444"
-        textAnchor="middle"
-        letterSpacing="8"
-        filter="url(#strongGlow)"
-      >TANODNET</text>
-
-      {/* ── CORNER BRACKET MARKS (tactical) ── */}
-      <path d="M38 36 L38 30 L44 30" stroke="#ef444466" strokeWidth="1.5" fill="none" />
-      <path d="M162 36 L162 30 L156 30" stroke="#ef444466" strokeWidth="1.5" fill="none" />
-      <path d="M38 164 L38 170 L44 170" stroke="#ef444466" strokeWidth="1.5" fill="none" />
-      <path d="M162 164 L162 170 L156 170" stroke="#ef444466" strokeWidth="1.5" fill="none" />
-
-      {/* ── BOTTOM STATUS BAR ── */}
-      <rect x="60" y="155" width="80" height="14" rx="3"
-        fill="#ef444418" stroke="#ef444433" strokeWidth="0.75" />
-      <text x="100" y="165"
-        fontFamily="'Space Mono', monospace"
-        fontSize="6.5" fontWeight="700"
-        fill="#ef4444" textAnchor="middle"
-        letterSpacing="2">AI NETWORK</text>
-
-      {/* ── ANIMATED PING RING (outer) ── */}
-      {animated && (
-        <circle cx="100" cy="100" r="88" fill="none"
-          stroke="#ef4444" strokeWidth="1" opacity="0.15"
-          className="animate-[logo-ping_3s_ease-out_infinite]"
-        />
-      )}
-    </svg>
+    </div>
   );
 }
 
-/* ── FULL WORDMARK SVG ────────────────────────────────────── */
+/* ── FULL WORDMARK COMPONENT ──────────────────────────────── */
 export function TanodWordmark({ width = 480, className }: { width?: number, className?: string }) {
   return (
-    <svg width={width} height={Math.round(width * 0.28)} viewBox="0 0 480 134" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <defs>
-        <linearGradient id="wmRedGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#dc2626" />
-          <stop offset="100%" stopColor="#ef4444" />
-        </linearGradient>
-        <linearGradient id="wmWhiteGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#f8fafc" />
-          <stop offset="100%" stopColor="#cbd5e1" />
-        </linearGradient>
-        <filter id="wmGlow">
-          <feGaussianBlur stdDeviation="3" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-
-      {/* Shield icon compact */}
-      <path d="M30 8 L58 18 L58 46 Q58 68 30 80 Q2 68 2 46 L2 18 Z"
-        fill="#0f0505" stroke="#ef4444" strokeWidth="1.5" />
-      <path d="M30 8 L30 80" stroke="#ef444420" strokeWidth="0.75" />
-      <path d="M2 46 L58 46" stroke="#ef444420" strokeWidth="0.75" />
-      {/* mini sun */}
-      {[...Array(8)].map((_, i) => {
-        const a = (i * 45 * Math.PI) / 180;
-        return <line key={i} x1={30 + Math.cos(a)*9} y1={40 + Math.sin(a)*9}
-          x2={30 + Math.cos(a)*15} y2={40 + Math.sin(a)*15}
-          stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" />;
-      })}
-      <circle cx="30" cy="40" r="7" fill="#f59e0b" />
-      <circle cx="30" cy="40" r="3.5" fill="#fde68a" />
-      {/* SOS mini */}
-      <text x="30" y="65" fontFamily="'Space Mono', monospace" fontSize="9" fontWeight="700"
-        fill="#ef4444" textAnchor="middle" letterSpacing="2" filter="url(#wmGlow)">SOS</text>
-
-      {/* Vertical divider */}
-      <line x1="72" y1="12" x2="72" y2="82" stroke="#ef444430" strokeWidth="1" />
-
-      {/* BRGY. label */}
-      <text x="82" y="30" fontFamily="'Space Mono', monospace" fontSize="9" fontWeight="400"
-        fill="#ef4444" letterSpacing="4" opacity="0.8">SYSTEM</text>
-
-      {/* TANOD main text */}
-      <text x="80" y="68" fontFamily="'Space Mono', monospace" fontSize="42" fontWeight="700"
-        fill="url(#wmWhiteGrad)" letterSpacing="4">TANODNET</text>
-
-      {/* S.O.S accent */}
-      <text x="80" y="90" fontFamily="'Space Mono', monospace" fontSize="16" fontWeight="700"
-        fill="url(#wmRedGrad)" letterSpacing="8" filter="url(#wmGlow)">INTELLIGENCE · AI</text>
-
-      {/* Tagline */}
-      <text x="80" y="110" fontFamily="'Space Mono', monospace" fontSize="7.5" fontWeight="400"
-        fill="#64748b" letterSpacing="3">BARANGAY EMERGENCY INTELLIGENCE SYSTEM</text>
-
-      {/* Right decorative bracket */}
-      <path d="M466 12 L472 12 L472 82 L466 82" stroke="#ef444430" strokeWidth="1" fill="none" />
-      {/* Status dot */}
-      <circle cx="462" cy="47" r="4" fill="#22c55e" opacity="0.8" />
-      <circle cx="462" cy="47" r="8" fill="none" stroke="#22c55e" strokeWidth="1" opacity="0.3" />
-    </svg>
+    <div className={cn("flex items-center gap-4", className)} style={{ width }}>
+      <img src="/logo_official.png" alt="Logo" className="h-16 w-16 object-contain" />
+      <div className="flex flex-col text-left">
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-mono text-brand-red uppercase tracking-[0.4em] opacity-80">BRGY. TANOD</span>
+          <span className="px-1.5 py-0.5 rounded bg-brand-red text-[8px] font-black text-white uppercase tracking-widest">S.O.S.</span>
+        </div>
+        <h1 className="text-3xl font-black italic text-white tracking-tighter uppercase font-mono leading-none mt-1">COMMAND NET</h1>
+        <p className="text-[9px] font-mono text-white/30 uppercase tracking-[0.25em] mt-2">BARANGAY EMERGENCY INTELLIGENCE SYSTEM</p>
+      </div>
+    </div>
   );
 }
 
@@ -324,23 +144,15 @@ export function BackgroundPattern() {
   );
 }
 
+/* ── APP ICON COMPONENT ──────────────────────────────────── */
 export function AppIcon({ size = 64, className }: { size?: number, className?: string }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-      <rect width="64" height="64" rx="14" fill="#0d0505" />
-      <rect width="64" height="64" rx="14" fill="none" stroke="#ef444433" strokeWidth="1.5" />
-      <path d="M32 6 L54 14 L54 31 Q54 48 32 58 Q10 48 10 31 L10 14 Z"
-        fill="#120808" stroke="#ef4444" strokeWidth="1.5" />
-      {[...Array(8)].map((_, i) => {
-        const a = (i * 45 * Math.PI) / 180;
-        return <line key={i} x1={32 + Math.cos(a)*8} y1={29 + Math.sin(a)*8}
-          x2={32 + Math.cos(a)*13} y2={29 + Math.sin(a)*13}
-          stroke="#f59e0b" strokeWidth="1.5" strokeLinecap="round" />;
-      })}
-      <circle cx="32" cy="29" r="6" fill="#f59e0b" />
-      <circle cx="32" cy="29" r="3" fill="#fde68a" />
-      <text x="32" y="48" fontFamily="'Space Mono', monospace" fontSize="7" fontWeight="700"
-        fill="#ef4444" textAnchor="middle" letterSpacing="0">Brgy.TANOD 🆘 ALERT</text>
-    </svg>
+    <div className={cn("relative flex items-center justify-center bg-[#0d0505] rounded-2xl border border-brand-red/20 overflow-hidden shadow-lg", className)} style={{ width: size, height: size }}>
+      <img 
+        src="/logo_official.png" 
+        alt="App Icon" 
+        className="w-[85%] h-[85%] object-contain"
+      />
+    </div>
   );
 }

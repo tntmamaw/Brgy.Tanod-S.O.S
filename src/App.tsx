@@ -45,7 +45,10 @@ import {
   Settings as SettingsIcon,
   X,
   MapPin,
-  Users
+  Users,
+  Volume2,
+  VolumeX,
+  Info
 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
@@ -54,9 +57,10 @@ import ActiveMap from './components/ActiveMap';
 import LiveMap from './LiveMap';
 import AdminDashboard from './components/AdminDashboard';
 import TanodDashboard from './components/TanodDashboard';
+import AboutModal from './components/AboutModal';
 import { Shift } from './types';
 import { format } from 'date-fns';
-import { queueSOS } from './lib/offlineQueue';
+import { queueSOS, removeQueuedSOS } from './lib/offlineQueue';
 import { InstallAppButton } from './components/InstallAppButton';
 import AdminResidents from './components/AdminResidents';
 import PatrolScheduler from './components/PatrolScheduler';
@@ -117,6 +121,37 @@ export default function App() {
   const [isRegistering, setIsRegistering] = useState(false);
   const [viewOverride, setViewOverride] = useState<'admin' | 'tanod' | 'resident' | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [globalSirenActive, setGlobalSirenActive] = useState(false);
+
+  useEffect(() => {
+    if (!db || !user) return;
+    return onSnapshot(doc(db, 'system', 'siren'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setGlobalSirenActive(data?.sirenActive || false);
+      }
+    }, (error) => {
+      console.warn("Siren sync limited:", error.message);
+    });
+  }, [user]);
+
+  const toggleGlobalSiren = async () => {
+    if (!db) return;
+    try {
+      await setDoc(doc(db, 'system', 'siren'), {
+        sirenActive: !globalSirenActive,
+        sirenTriggeredBy: effectiveProfile?.name || 'System',
+        sirenTriggeredAt: new Date().toISOString()
+      }, { merge: true });
+      toast.success(globalSirenActive ? 'Global Siren Off' : 'Global Siren BROADCAST ACTIVE', { 
+        icon: globalSirenActive ? '🔇' : '📢',
+        style: globalSirenActive ? {} : { background: '#FF4B4B', color: '#fff' }
+      });
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to toggle siren system');
+    }
+  };
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -139,7 +174,8 @@ export default function App() {
   };
 
   const isRuben = user?.email === 'rubenlleg12@gmail.com';
-  const effectiveRole = viewOverride || profile?.role;
+  const baseRole = isRuben ? 'superadmin' : profile?.role;
+  const effectiveRole = viewOverride || baseRole;
   const effectiveProfile = profile ? { 
     ...profile, 
     role: effectiveRole as UserRole,
@@ -161,20 +197,9 @@ export default function App() {
       return;
     }
 
-    const fetchDocWithTimeout = (docRef: any) => Promise.race([
-      getDoc(docRef),
-      new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout reading profile data (offline?)")), 8000))
-    ]);
-
-    const setDocWithTimeout = (docRef: any, data: any) => Promise.race([
-      setDoc(docRef, data),
-      new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout setting profile data (offline?)")), 8000))
-    ]);
-    
-    const updateDocWithTimeout = (docRef: any, data: any) => Promise.race([
-      updateDoc(docRef, data),
-      new Promise<any>((_, reject) => setTimeout(() => reject(new Error("Timeout updating profile data (offline?)")), 8000))
-    ]);
+    const fetchDocWithTimeout = (docRef: any) => getDoc(docRef);
+    const setDocWithTimeout = (docRef: any, data: any) => setDoc(docRef, data);
+    const updateDocWithTimeout = (docRef: any, data: any) => updateDoc(docRef, data);
 
     console.log("[App.tsx] Setting up onAuthStateChanged listener...", auth, db);
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -188,7 +213,7 @@ export default function App() {
           const userDoc = await fetchDocWithTimeout(doc(db, 'users', firebaseUser.uid));
           
           if (userDoc.exists()) {
-            const data = userDoc.data();
+            const data = userDoc.data() as any;
             // Force superadmin role if email matches
             if (isSuperAdminEmail && data.role !== 'superadmin') {
               try { await updateDocWithTimeout(doc(db, 'users', firebaseUser.uid), { role: 'superadmin' }); } catch(e){}
@@ -215,7 +240,7 @@ export default function App() {
           try {
             const resDoc = await fetchDocWithTimeout(doc(db, 'residents', firebaseUser.uid));
             if (resDoc.exists()) {
-              setResidentProfile({ id: resDoc.id, ...resDoc.data() } as ResidentProfile);
+              setResidentProfile({ id: resDoc.id, ...(resDoc.data() as any) } as ResidentProfile);
             }
           } catch(e) { }
         } else {
@@ -241,22 +266,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    // Alert sound logic for Tanods
-    if (!profile || (profile.role !== 'tanod' && profile.role !== 'admin')) return;
+    // Alert sound logic
+    if (globalSirenActive) {
+      if (!siren.playing()) {
+        siren.play();
+      }
+      return; // If global is active, keep it playing
+    }
+
+    if (!effectiveProfile || (effectiveProfile.role !== 'tanod' && effectiveProfile.role !== 'admin' && effectiveProfile.role !== 'superadmin')) {
+      siren.stop();
+      return;
+    }
 
     const hasActive = alerts.some(a => a.status === 'pending');
     if (hasActive) {
       if (!siren.playing()) {
         siren.volume(1.0);
         siren.play();
-        setTimeout(() => { siren.stop(); }, 10000);
+        setTimeout(() => { if (!globalSirenActive) siren.stop(); }, 10000);
       }
     } else {
       siren.stop();
     }
     
-    return () => siren.stop();
-  }, [alerts, profile?.role]);
+    return () => { if (!globalSirenActive) siren.stop(); };
+  }, [alerts, effectiveProfile?.role, globalSirenActive]);
 
   const handleLogin = async () => {
     if (isLoggingIn) return;
@@ -382,14 +417,7 @@ export default function App() {
     try {
       console.log("Attempting setDoc with profile:", newProfile);
       
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Database connection timed out. Is Cloud Firestore enabled in your Firebase project?")), 10000);
-      });
-      
-      await Promise.race([
-        setDoc(doc(db, 'users', user.uid), newProfile),
-        timeoutPromise
-      ]);
+      await setDoc(doc(db, 'users', user.uid), newProfile);
 
       console.log("setDoc successful, updating local profile state.");
       setProfile(newProfile as User);
@@ -463,12 +491,14 @@ export default function App() {
   }
 
   const items = navItems.filter(item => {
-    if (effectiveRole === 'admin') return true;
-    if (effectiveRole === 'tanod') {
-      return !['residents', 'settings'].includes(item.id);
+    if (effectiveRole === 'admin' || effectiveRole === 'superadmin') {
+      return item.id !== 'map'; // Admins use Command & Tracker
     }
-    // Residents only see Dashboard, Map, Directory, Settings
-    return ['home', 'map', 'directory', 'settings'].includes(item.id);
+    if (effectiveRole === 'tanod') {
+      return !['residents', 'settings', 'map'].includes(item.id); // Tanods use Command & Tracker
+    }
+    // Residents see Dashboard (home), Map (map), Tracker (tracker), Comms (directory), Profile (settings)
+    return ['home', 'map', 'tracker', 'directory', 'settings'].includes(item.id);
   });
 
   return (
@@ -593,7 +623,7 @@ export default function App() {
             </div>
           </div>
           <button 
-            onClick={() => { if (auth) signOut(auth); }} 
+            onClick={handleSignOut} 
             className="w-full flex items-center justify-center gap-3 px-6 py-4 rounded-2xl text-white/40 hover:text-emergency hover:bg-emergency/5 transition-all text-[10px] font-black uppercase tracking-[0.2em] font-mono border border-transparent hover:border-emergency/10"
           >
             <LogOut className="w-4 h-4" />
@@ -612,7 +642,7 @@ export default function App() {
               <div className="flex flex-col items-end">
                 <span className="text-[10px] font-black tracking-widest text-emergency uppercase mt-1">
                   {effectiveRole === 'resident' && "Resident view panel"}
-                  {effectiveRole === 'admin' && "Admin view panel"}
+                  {(effectiveRole === 'admin' || effectiveRole === 'superadmin') && "Admin view panel"}
                   {effectiveRole === 'tanod' && "Tanod view panel"}
                 </span>
                 <span className="text-[8px] font-mono text-white/40 uppercase tracking-[0.2em]">SECURE SYSTEM v2.4.0</span>
@@ -623,7 +653,7 @@ export default function App() {
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-between md:justify-end gap-3 w-full md:w-auto">
-            {profile?.role === 'admin' && (
+            {(profile?.role === 'admin' || profile?.role === 'superadmin' || isRuben) && (
               <div className="flex bg-brand-bg/50 border border-white/10 rounded-2xl overflow-hidden p-1">
                 <button 
                   onClick={() => { setViewOverride(null); setActiveTab('home'); }} 
@@ -635,17 +665,17 @@ export default function App() {
                   onClick={() => { setViewOverride('tanod'); setActiveTab('home'); }} 
                   className={cn("px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all", viewOverride === 'tanod' ? "bg-emergency text-white shadow-glow-red" : "text-white/40 hover:text-white")}
                 >
-                  TANOD
+                  TANOD VIEW
                 </button>
                 <button 
                   onClick={() => { setViewOverride('resident'); setActiveTab('home'); }} 
                   className={cn("px-4 py-2 rounded-xl text-[10px] font-black tracking-widest transition-all", viewOverride === 'resident' ? "bg-emergency text-white shadow-glow-red" : "text-white/40 hover:text-white")}
                 >
-                  CLIENT
+                  CLIENT VIEW
                 </button>
               </div>
             )}
-            {(effectiveRole === 'tanod' || effectiveRole === 'admin') && (
+            {(effectiveRole === 'tanod' || effectiveRole === 'admin' || effectiveRole === 'superadmin') && (
               <button 
                 onClick={() => setIsIncidentFormOpen(true)}
                 className="flex items-center gap-2 px-6 py-3 bg-emergency rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-glow-red font-black text-xs tracking-widest"
@@ -655,7 +685,7 @@ export default function App() {
             )}
             <button className="p-3 bg-brand-card border border-white/10 rounded-2xl hover:bg-brand-card/80 relative transition-all group">
               <Bell className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              {alerts.length > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-emergency border-2 border-brand-bg rounded-full animate-ping"></span>}
+              {alerts.filter(a => a.status !== 'resolved' && a.status !== 'cancelled').length > 0 && <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-emergency border-2 border-brand-bg rounded-full animate-ping"></span>}
             </button>
           </div>
         </header>
@@ -671,18 +701,20 @@ export default function App() {
                 isOnline={isOnline} 
                 deferredPrompt={deferredPrompt}
                 onInstall={handleInstallApp}
+                sirenActive={globalSirenActive}
+                onToggleSiren={toggleGlobalSiren}
               />
             )}
-            {activeTab === 'map' && (
+            {activeTab === 'map' && effectiveRole === 'resident' && (
               <div className="h-full min-h-[500px] flex flex-col gap-4">
                 <div className="bg-[#16191F] p-4 rounded-xl border border-[#2D3139] flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h3 className="text-lg font-bold font-mono uppercase">Global Area Map</h3>
-                    <p className="text-xs text-[#8E9299]">Live view of all emergency alerts and active patrols</p>
+                    <h3 className="text-lg font-bold font-mono uppercase">Offline Area Map</h3>
+                    <p className="text-xs text-[#8E9299]">Fallback view for network issues / area intelligence</p>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-black tracking-widest text-[#8E9299]">
-                    <div className="flex items-center gap-2"><span className="text-base">🔴</span> RESIDENT SOS</div>
-                    <div className="flex items-center gap-2"><span className="text-base">🟢</span> TANOD ON DUTY</div>
+                    <div className="flex items-center gap-2"><span className="text-base">🔴</span> SOS</div>
+                    <div className="flex items-center gap-2"><span className="text-base">🟢</span> PATROL</div>
                   </div>
                 </div>
                 <ActiveMap alerts={alerts} patrols={patrols} />
@@ -692,7 +724,7 @@ export default function App() {
               <div className="h-full min-h-[500px] flex flex-col gap-4">
                 <div className="bg-[#16191F] p-4 rounded-xl border border-[#2D3139] flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
-                    <h3 className="text-lg font-bold font-mono uppercase">Live GPS Tracker</h3>
+                    <h3 className="text-lg font-bold font-mono uppercase">Tactical Live GPS</h3>
                     <p className="text-xs text-[#8E9299]">Real-time Tanod-to-Citizen streaming via WebSockets/Firebase</p>
                   </div>
                   <div className="flex items-center gap-4 text-xs font-black tracking-widest text-[#8E9299]">
@@ -703,7 +735,7 @@ export default function App() {
                 <LiveMap />
               </div>
             )}
-            {activeTab === 'residents' && effectiveRole === 'admin' && effectiveProfile && <AdminResidents profile={effectiveProfile} />}
+            {activeTab === 'residents' && (effectiveRole === 'admin' || effectiveRole === 'superadmin') && effectiveProfile && <AdminResidents profile={effectiveProfile} />}
             {activeTab === 'directory' && <DirectoryView />}
             {activeTab === 'schedule' && effectiveProfile && <ScheduleView role={effectiveRole as any} profile={effectiveProfile} />}
             {activeTab === 'reports' && <ReportsView />}
@@ -820,8 +852,8 @@ function PendingApproval({ user, deferredPrompt, onInstall, onLogout }: { user: 
 
 const navItems = [
   { id: 'home', label: '📡 Command', icon: LayoutDashboard },
-  { id: 'map', label: '🗺 Map', icon: MapIcon },
-  { id: 'tracker', label: '📍 Live GPS', icon: Navigation },
+  { id: 'map', label: '🗺 Offline Map', icon: MapIcon },
+  { id: 'tracker', label: '📍 Tactical GPS', icon: Navigation },
   { id: 'residents', label: '👥 Residents', icon: Users },
   { id: 'roster', label: '👮 Tanods', icon: Shield },
   { id: 'schedule', label: '📅 Schedule', icon: Clock },
@@ -972,13 +1004,14 @@ function RoleCard({ title, desc, icon: Icon, onClick, color, disabled }: any) {
   );
 }
 
-function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInstall }: { profile: User, patrols: PatrolLocation[], isOnline: boolean, deferredPrompt: any, onInstall: () => void }) {
+function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInstall, onTabChange, sirenActive, onToggleSiren }: { profile: User, patrols: PatrolLocation[], isOnline: boolean, deferredPrompt: any, onInstall: () => void, onTabChange: (tab: string) => void, sirenActive: boolean, onToggleSiren: () => void }) {
   const [sending, setSending] = useState(false);
   const [activeAlert, setActiveAlert] = useState<Alert | null>(null);
   const [sosTypeToSubmit, setSosTypeToSubmit] = useState<EmergencyType | null>(null);
   const [isChoosingCategory, setIsChoosingCategory] = useState(false);
   const [sosDescription, setSosDescription] = useState('');
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
 
   useEffect(() => {
     if (!db) return;
@@ -992,12 +1025,14 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
     return onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
         const data = snapshot.docs[0].data() as Omit<Alert, 'id'>;
-        if (data.status !== 'resolved') {
+        if (data.status !== 'resolved' && data.status !== 'cancelled') {
           setActiveAlert({ id: snapshot.docs[0].id, ...data } as Alert);
         } else {
           setActiveAlert(null);
         }
       }
+    }, (error) => {
+      console.error("Alerts listener disabled or failed (ResidentDashboard):", error.message);
     });
   }, [profile.uid]);
 
@@ -1101,6 +1136,22 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
       animate="show"
       className="space-y-8 pb-32 relative"
     >
+      {/* Siren Control (Manual Override) */}
+      <motion.div variants={itemVariants} className="flex justify-center -mb-4">
+        <button 
+          onClick={onToggleSiren}
+          className={cn(
+            "px-6 py-3 rounded-2xl border text-[10px] font-black uppercase tracking-[0.2em] font-mono transition-all flex items-center gap-2 shadow-xl",
+            sirenActive 
+              ? "bg-emergency border-white/30 text-white animate-pulse" 
+              : "bg-white/5 border-white/5 text-white/30 hover:bg-white/10 hover:border-white/10"
+          )}
+        >
+          {sirenActive ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          {sirenActive ? "STOP EMERGENCY BROADCAST" : "ACTIVATE EMERGENCY SIREN"}
+        </button>
+      </motion.div>
+
       {deferredPrompt && (
         <motion.button
           variants={itemVariants}
@@ -1231,13 +1282,36 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
         <div className="h-64 rounded-[30px] overflow-hidden border border-[#2D3139]">
           <ActiveMap alerts={activeAlert ? [activeAlert] : []} patrols={patrols} />
         </div>
-        <p className="text-[#8E9299] text-xs mt-4 text-center">There are {patrols.length} Tanod units currently patrolling the Barangay.</p>
+        <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-[#8E9299] text-xs">There are {patrols.length} Tanod units currently patrolling the Barangay.</p>
+          <button 
+            onClick={() => onTabChange('tracker')}
+            className="px-6 py-2 bg-brand-card border border-white/5 text-info text-[10px] font-black rounded-xl hover:border-info/40 transition-all uppercase tracking-widest font-mono"
+          >
+            🛰️ Tactical GPS Tracker
+          </button>
+        </div>
       </motion.div>
 
       <motion.div variants={itemVariants}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-black text-xl text-white uppercase italic tracking-tighter font-mono">Tactical Comms</h3>
-          <span className="text-[8px] font-black text-white/30 uppercase tracking-[0.3em] font-mono">External Hotlines</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[8px] font-black text-white/30 uppercase tracking-[0.3em] font-mono">External Hotlines</span>
+            <button 
+              onClick={onToggleSiren}
+              className={cn(
+                "px-3 py-1.5 rounded-xl border transition-all flex items-center gap-2 font-mono text-[9px] font-black uppercase tracking-widest group",
+                sirenActive 
+                  ? "bg-emergency border-white text-white animate-pulse shadow-glow-red" 
+                  : "bg-white/5 border-white/10 text-white/40 hover:bg-white/10 hover:text-white/60"
+              )}
+              title={sirenActive ? "Stop Global Siren" : "Test Global Siren"}
+            >
+              {sirenActive ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+              {sirenActive ? "STOP SIREN" : "TEST SIREN"}
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
           {[
@@ -1270,6 +1344,23 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
 
       <motion.div variants={itemVariants}>
         <InstallAppButton />
+      </motion.div>
+
+      <AboutModal 
+        isOpen={isAboutOpen} 
+        onClose={() => setIsAboutOpen(false)} 
+        role={profile.role} 
+      />
+
+      <motion.div variants={itemVariants} className="flex justify-center pt-8 border-t border-[#2D3139]">
+        <button 
+          onClick={() => setIsAboutOpen(true)}
+          className="flex items-center gap-2 text-[#8E9299] hover:text-white transition-colors group px-4 py-2"
+          id="resident-about-btn"
+        >
+          <Info className="w-4 h-4 text-[#8E9299]/40 group-hover:text-white transition-colors" />
+          <span className="text-[10px] font-black uppercase tracking-[0.3em] font-mono">System Vision & Mission</span>
+        </button>
       </motion.div>
 
       {/* SOS Category Modal */}
@@ -1390,8 +1481,15 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
                 </button>
                 <button 
                   onClick={async () => {
-                    await updateDoc(doc(db, 'alerts', cancellingId), { status: 'cancelled' });
-                    setCancellingId(null);
+                    try {
+                      removeQueuedSOS(cancellingId);
+                      await updateDoc(doc(db, 'alerts', cancellingId), { status: 'cancelled' });
+                    } catch (error: any) {
+                      useIncidentStore.getState().updateAlertStatus(cancellingId, 'cancelled');
+                      console.warn('Failed to update cancel status online, cancelled locally:', error);
+                    } finally {
+                      setCancellingId(null);
+                    }
                   }}
                   className="flex-1 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 transition-all text-sm uppercase"
                 >
@@ -1419,6 +1517,8 @@ function RecentAlerts({ residentId }: { residentId: string }) {
     );
     return onSnapshot(q, (snap) => {
       setAlerts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Alert)));
+    }, (error) => {
+      console.error("Alerts listener disabled or failed:", error.message);
     });
   }, [residentId]);
 
@@ -1454,10 +1554,10 @@ function RecentAlerts({ residentId }: { residentId: string }) {
   );
 }
 
-function DashboardView({ profile, alerts, patrols, onTabChange, isOnline, deferredPrompt, onInstall }: { profile: User, alerts: Alert[], patrols: PatrolLocation[], onTabChange: (tab: string) => void, isOnline: boolean, deferredPrompt: any, onInstall: () => void }) {
-  if (profile.role === 'resident') return <ResidentDashboard profile={profile} patrols={patrols} isOnline={isOnline} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
-  if (profile.role === 'tanod') return <TanodDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
-  if (profile.role === 'admin' || profile.role === 'superadmin') return <AdminDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} />;
+function DashboardView({ profile, alerts, patrols, onTabChange, isOnline, deferredPrompt, onInstall, sirenActive, onToggleSiren }: { profile: User, alerts: Alert[], patrols: PatrolLocation[], onTabChange: (tab: string) => void, isOnline: boolean, deferredPrompt: any, onInstall: () => void, sirenActive: boolean, onToggleSiren: () => void }) {
+  if (profile.role === 'resident') return <ResidentDashboard profile={profile} patrols={patrols} isOnline={isOnline} deferredPrompt={deferredPrompt} onInstall={onInstall} onTabChange={onTabChange} sirenActive={sirenActive} onToggleSiren={onToggleSiren} />;
+  if (profile.role === 'tanod') return <TanodDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} sirenActive={sirenActive} onToggleSiren={onToggleSiren} />;
+  if (profile.role === 'admin' || profile.role === 'superadmin') return <AdminDashboard profile={profile} onTabChange={onTabChange} deferredPrompt={deferredPrompt} onInstall={onInstall} sirenActive={sirenActive} onToggleSiren={onToggleSiren} />;
   return <div className="text-center p-12 text-[#8E9299]">Unauthorized Access</div>;
 }
 
@@ -1516,6 +1616,8 @@ function TanodRosterView() {
     const q = query(collection(db, 'users'), where('role', '==', 'tanod'));
     return onSnapshot(q, (snap) => {
       setTanods(snap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
+    }, (error) => {
+      console.error("Tanod Roster listener error:", error.message);
     });
   }, []);
 
@@ -1673,6 +1775,10 @@ function ScheduleView({ role, profile }: { role: UserRole, profile: User | null 
       clearTimeout(fallbackTimer);
       setShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift)));
       setLoading(false);
+    }, (error) => {
+      clearTimeout(fallbackTimer);
+      setLoading(false);
+      console.error("Shifts listener disabled or failed:", error.message);
     });
     return () => {
       clearTimeout(fallbackTimer);
@@ -1680,7 +1786,7 @@ function ScheduleView({ role, profile }: { role: UserRole, profile: User | null 
     };
   }, []);
 
-  if (role === 'admin') return <PatrolScheduler profile={profile} />;
+  if (role === 'admin' || role === 'superadmin') return <PatrolScheduler profile={profile} />;
 
   return (
     <div className="glass-panel border-white/5 rounded-[48px] p-8 md:p-14 shadow-command max-w-5xl relative overflow-hidden">

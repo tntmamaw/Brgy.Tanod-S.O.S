@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, initializeFirestore, doc, getDocFromServer } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
 import firebaseConfig from '../../firebase-applet-config.json';
@@ -16,7 +16,7 @@ if (!isConfigEmpty) {
   app = initializeApp(firebaseConfig);
   db = initializeFirestore(app, {
     experimentalForceLongPolling: true
-  }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+  }, firebaseConfig.firestoreDatabaseId);
   auth = getAuth(app);
   storage = getStorage(app);
 } else {

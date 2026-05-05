@@ -23,6 +23,16 @@ export function queueSOS(data: any) {
   }
 }
 
+export function removeQueuedSOS(idToRemove: string) {
+  try {
+    const queue: QueuedSOS[] = JSON.parse(localStorage.getItem(SOS_QUEUE_KEY) || '[]');
+    const filtered = queue.filter(item => item.id !== idToRemove && item.data.id !== idToRemove);
+    localStorage.setItem(SOS_QUEUE_KEY, JSON.stringify(filtered));
+  } catch (error) {
+    console.error('Failed to remove queued SOS:', error);
+  }
+}
+
 export async function flushSOSQueue(processFn: (data: any) => Promise<void>) {
   try {
     const queue: QueuedSOS[] = JSON.parse(localStorage.getItem(SOS_QUEUE_KEY) || '[]');

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, Timestamp, getCountFromServer, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, Timestamp, getCountFromServer, addDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Alert, User } from '../types';
 import { 
@@ -12,22 +12,17 @@ import {
   MapPin, 
   ExternalLink,
   Zap,
-  MoreVertical
+  MoreVertical,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Howl } from 'howler';
 import DispatchModal from './DispatchModal';
+import AboutModal from './AboutModal';
 import { InstallAppButton } from './InstallAppButton';
 import { TanodLogo } from './Branding';
 import { ReviewArchivedLogsDrawer } from './Admin/ReviewArchivedLogsDrawer';
 import { PoliceLights } from './PoliceLights';
-
-const alarm = new Howl({
-  src: ['https://assets.mixkit.co/active_storage/sfx/1004/1004-preview.mp3'],
-  loop: true,
-  volume: 0.6,
-});
 
 import { useIncidentStore } from '../store/useIncidentStore';
 import { useTanodStore } from '../store/useTanodStore';
@@ -35,11 +30,12 @@ import { logIncidentAction } from '../services/logService';
 
 import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 
-export default function AdminDashboard({ profile, onTabChange, deferredPrompt, onInstall }: { profile: User | null, onTabChange: (tab: string) => void, deferredPrompt?: any, onInstall?: () => void }) {
+export default function AdminDashboard({ profile, onTabChange, deferredPrompt, onInstall, sirenActive, onToggleSiren }: { profile: User | null, onTabChange: (tab: string) => void, deferredPrompt?: any, onInstall?: () => void, sirenActive: boolean, onToggleSiren: () => void }) {
   const { alerts } = useIncidentStore();
   const { patrols } = useTanodStore();
   const [isFlashing, setIsFlashing] = useState(false);
   const [selectedAlertForDispatch, setSelectedAlertForDispatch] = useState<Alert | null>(null);
+  const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [stats, setStats] = useState({
     residents: 0,
     pendingReg: 0,
@@ -50,23 +46,14 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
   useEffect(() => {
     if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod' && profile.role !== 'superadmin')) return;
 
-    // Play loud siren for 10 seconds if there's a new pending alert
+    // Handle flashing lights only, sound is global in App.tsx
     const hasActive = alerts.some(a => a.status === 'pending');
-    if (hasActive) {
-      if (!alarm.playing()) {
-        alarm.volume(1.0);
-        alarm.play();
-        setIsFlashing(true);
-        setTimeout(() => { 
-          alarm.stop(); 
-          setIsFlashing(false);
-        }, 10000);
-      }
+    if (hasActive || sirenActive) {
+      setIsFlashing(true);
     } else {
-      alarm.stop();
       setIsFlashing(false);
     }
-  }, [alerts, profile]);
+  }, [alerts, profile, sirenActive]);
 
   useEffect(() => {
     if (!profile || (profile.role !== 'admin' && profile.role !== 'tanod' && profile.role !== 'superadmin')) return;
@@ -98,7 +85,6 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
     fetchStats();
     return () => {
       unsubActiveStats();
-      alarm.stop();
     };
   }, []);
 
@@ -132,16 +118,17 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
         });
       }
 
-      await updateDoc(doc(db, 'alerts', alert.id), updateData);
+      // Use setDoc merge true to be robust against missing documents
+      await setDoc(doc(db, 'alerts', alert.id), updateData, { merge: true });
       
       // Update Tanod status in roster if we know who they are
       const tanodId = alert.respondedBy || updateData.respondedBy;
       if (tanodId && tanodId !== 'unknown') {
         try {
           const newRosterStatus = status === 'resolved' ? 'On-Duty' : status;
-          await updateDoc(doc(db, 'users', tanodId), { status: newRosterStatus });
+          await setDoc(doc(db, 'users', tanodId), { status: newRosterStatus }, { merge: true });
         } catch (e) {
-          handleFirestoreError(e, OperationType.UPDATE, `users/${tanodId}`);
+          console.warn(`[AdminDashboard] Failed to update user roster status for ${tanodId}:`, e);
         }
       }
       
@@ -204,8 +191,24 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
           </h2>
           <p className="text-[10px] font-mono text-white/30 uppercase tracking-[0.3em] mt-3 bg-white/5 inline-block px-3 py-1 rounded-full border border-white/5">Active Surveillance & Dispatch Interface</p>
         </div>
-        <ReviewArchivedLogsDrawer profile={profile} />
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsAboutOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+            id="admin-about-btn"
+          >
+            <Info className="w-4 h-4 text-white/40 group-hover:text-white transition-colors" />
+            <span className="text-[10px] font-bold text-white/40 group-hover:text-white uppercase tracking-widest font-mono">System Overview & Mission</span>
+          </button>
+          <ReviewArchivedLogsDrawer profile={profile} />
+        </div>
       </motion.div>
+
+      <AboutModal 
+        isOpen={isAboutOpen} 
+        onClose={() => setIsAboutOpen(false)} 
+        role={profile?.role} 
+      />
 
       {/* Stats Grid */}
       <motion.div variants={itemVariants} className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
@@ -254,13 +257,13 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
 
           <div className="space-y-4">
             <AnimatePresence mode="popLayout">
-              {alerts.filter(a => a.status !== 'resolved').length === 0 ? (
+              {alerts.filter(a => a.status !== 'resolved' && a.status !== 'cancelled').length === 0 ? (
                 <div className="glass-panel border-white/5 rounded-[40px] p-24 text-center">
                   <CheckCircle className="w-16 h-16 text-success mx-auto mb-4 opacity-10" />
                   <p className="text-white/30 font-black uppercase tracking-widest text-xs font-mono">No active emergency alerts detected.</p>
                 </div>
               ) : (
-                alerts.filter(a => a.status !== 'resolved').map(alert => (
+                alerts.filter(a => a.status !== 'resolved' && a.status !== 'cancelled').map(alert => (
                   <motion.div
                     layout
                     initial={{ opacity: 0, x: -20 }}
@@ -423,26 +426,36 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
                 ))
               )}
             </div>
-            <button 
-              onClick={() => onTabChange('roster')}
-              className="w-full mt-12 py-6 bg-brand-bg border border-white/5 rounded-[24px] text-[10px] font-black uppercase tracking-[0.4em] text-white/30 hover:text-info hover:border-info/30 hover:bg-info/5 transition-all font-mono shadow-inner group"
-            >
-              UNIT CONFIGURATION <span className="inline-block transform group-hover:translate-x-1 transition-transform ml-2">→</span>
-            </button>
+            <div className="flex flex-col gap-4 mt-12">
+              <button 
+                onClick={() => onTabChange('roster')}
+                className="w-full py-6 bg-brand-bg border border-white/5 rounded-[24px] text-[10px] font-black uppercase tracking-[0.4em] text-white/30 hover:text-info hover:border-info/30 hover:bg-info/5 transition-all font-mono shadow-inner group flex items-center justify-center gap-2"
+              >
+                UNIT CONFIGURATION <span className="inline-block transform group-hover:translate-x-1 transition-transform ml-2">→</span>
+              </button>
+              <button 
+                onClick={() => onTabChange('schedule')}
+                className="w-full py-6 bg-brand-bg border border-white/5 rounded-[24px] text-[10px] font-black uppercase tracking-[0.4em] text-white/30 hover:text-amber-500 hover:border-amber-500/30 hover:bg-amber-500/5 transition-all font-mono shadow-inner group flex items-center justify-center gap-2"
+              >
+                <Clock className="w-4 h-4" /> PATROL SCHEDULER <span className="inline-block transform group-hover:translate-x-1 transition-transform ml-2">→</span>
+              </button>
+            </div>
           </div>
           
           <div className="bg-emergency rounded-[40px] p-10 text-white shadow-glow-red relative overflow-hidden group">
             <div className="relative z-10">
               <p className="text-[10px] font-black uppercase tracking-[0.3em] mb-3 opacity-60 font-mono">Panic Protocol</p>
-              <p className="text-3xl font-black italic tracking-tighter mb-8 font-mono leading-none">GLOBAL AUDIO ALARM</p>
+              <p className="text-3xl font-black italic tracking-tighter mb-8 font-mono leading-none">GLOBAL AUDIO BROADCAST</p>
               <button 
-                onClick={() => {
-                  alert("🚨 GLOBAL PANIC ALARM ACTIVATED! ALL TANODS ALERTED. 🚨");
-                  onTabChange('map');
-                }}
-                className="w-full py-5 bg-white text-emergency font-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl uppercase italic tracking-[0.2em] text-xs font-mono"
+                onClick={onToggleSiren}
+                className={cn(
+                  "w-full py-5 font-black rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl uppercase italic tracking-[0.2em] text-xs font-mono border",
+                  sirenActive 
+                    ? "bg-white text-emergency border-white animate-pulse" 
+                    : "bg-emergency/50 text-white border-white/30 hover:bg-emergency hover:border-white"
+                )}
               >
-                Trigger All Units
+                {sirenActive ? "STOP GLOBAL SIREN" : "TRIGGER GLOBAL BROADCAST"}
               </button>
             </div>
             <AlertTriangle className="absolute -bottom-10 -right-10 w-56 h-56 opacity-10 group-hover:scale-110 group-hover:rotate-12 transition-transform duration-700" />

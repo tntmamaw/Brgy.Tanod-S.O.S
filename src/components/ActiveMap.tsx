@@ -224,7 +224,7 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(15,17,21,0.6)_100%)]"></div>
         </div>
         
-        {alerts.map(alert => (
+        {alerts.filter(a => a.status !== 'resolved' && a.status !== 'cancelled').map(alert => (
           <React.Fragment key={alert.id}>
             {showHeatmap && alert.aiAnalysis && alert.aiAnalysis.severityScore > 6 && (
               <Circle 

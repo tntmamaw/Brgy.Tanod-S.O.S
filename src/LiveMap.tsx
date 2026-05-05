@@ -156,7 +156,7 @@ function MapController({ patrols, alerts, showP, showS }: any) {
   useEffect(() => {
     const pts: [number, number][] = [];
     if (showP) patrols.forEach((p:any)=>{ if(p.location?.lat&&p.location?.lng) pts.push([p.location.lat,p.location.lng]); });
-    if (showS) alerts.forEach((a:any) =>{ if(a.location?.lat&&a.location?.lng) pts.push([a.location.lat,a.location.lng]); });
+    if (showS) alerts.filter((a: any) => a.status !== 'resolved' && a.status !== 'cancelled').forEach((a:any) =>{ if(a.location?.lat&&a.location?.lng) pts.push([a.location.lat,a.location.lng]); });
     if (pts.length >= 2) try{ map.fitBounds(L.latLngBounds(pts),{padding:[52,52],maxZoom:16}); }catch{}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -169,7 +169,7 @@ function RoutingLines({ patrols, alerts, show }: any) {
   if (!show) return null;
   return (
     <>
-      {alerts.map((a: any) => {
+      {alerts.filter((a: any) => a.status !== 'resolved' && a.status !== 'cancelled').map((a: any) => {
         if (!a.location?.lat||!a.location?.lng) return null;
         let nearest: any = null, best = Infinity;
         patrols.forEach((p:any)=>{
@@ -243,7 +243,7 @@ export default function LiveMap() {
   const [userPos,     setUserPos]     = useState<UserPos | null>(null);
 
   const activePatrols = patrols.filter(p=>p.location?.lat&&p.location?.lng).length;
-  const activeSOS     = alerts.filter(a=>a.location?.lat&&a.location?.lng).length;
+  const activeSOS     = alerts.filter(a=>a.status !== 'resolved' && a.status !== 'cancelled' && a.location?.lat&&a.location?.lng).length;
 
   // Inject global CSS once
   useEffect(() => {
@@ -402,7 +402,7 @@ export default function LiveMap() {
         )}
 
         {/* SOS alerts */}
-        {showSOS && alerts.map((a) => {
+        {showSOS && alerts.filter(a => a.status !== 'resolved' && a.status !== 'cancelled').map((a) => {
           if (!a.location?.lat || !a.location?.lng) return null;
           const s = getSev(a.type);
           return (

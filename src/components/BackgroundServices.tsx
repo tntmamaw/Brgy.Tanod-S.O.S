@@ -8,6 +8,7 @@ import { useTanodStore } from '../store/useTanodStore';
 import { useLogStore } from '../store/useLogStore';
 import { watchLocation } from '../lib/gps';
 import { flushSOSQueue } from '../lib/offlineQueue';
+import { handleFirestoreError, OperationType } from '../lib/firestore-errors';
 import { Alert, PatrolLocation, Shift } from '../types';
 import { scheduleDailyLogReset } from '../lib/scheduler';
 import toast from 'react-hot-toast';
@@ -178,23 +179,23 @@ export default function BackgroundServices() {
     if (!profile || !db) return;
 
     // A. Alerts Listener
-    const alertsQ = profile.role === 'admin' || profile.role === 'tanod'
+    const alertsQ = profile.role === 'admin' || profile.role === 'superadmin' || profile.role === 'tanod'
       ? query(collection(db, 'alerts'), orderBy('timestamp', 'desc'))
       : query(collection(db, 'alerts'), where('residentId', '==', profile.uid), orderBy('timestamp', 'desc'));
 
     const unsubAlerts = onSnapshot(alertsQ, (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Alert));
       setAlerts(list);
-    }, (error) => console.error('Alerts listener error:', error));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'alerts'));
 
     // B. Patrols Listener (Admin/Tanod only)
     let unsubPatrols = () => {};
-    if (profile.role === 'admin' || profile.role === 'tanod') {
+    if (profile.role === 'admin' || profile.role === 'superadmin' || profile.role === 'tanod') {
       const patrolsQ = query(collection(db, 'patrols'), where('isActive', '==', true));
       unsubPatrols = onSnapshot(patrolsQ, (snapshot) => {
         const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PatrolLocation));
         setPatrols(list);
-      }, (error) => console.error('Patrols listener error:', error));
+      }, (error) => handleFirestoreError(error, OperationType.LIST, 'patrols'));
     }
 
     // C. Shifts Listener (Relevant to profile)
@@ -202,7 +203,7 @@ export default function BackgroundServices() {
     const unsubShifts = onSnapshot(shiftsQ, (snapshot) => {
       const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Shift));
       setShifts(list);
-    }, (error) => console.error('Shifts listener error:', error));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'shifts'));
 
     return () => {
       unsubAlerts();
