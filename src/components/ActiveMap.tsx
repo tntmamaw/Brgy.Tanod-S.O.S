@@ -91,9 +91,18 @@ interface MapProps {
   patrols: PatrolLocation[];
   center?: [number, number];
   showHeatmap?: boolean;
+  onLocationSelect?: (lat: number, lng: number) => void;
+  selectionLocation?: { lat: number, lng: number } | null;
 }
 
-export default function ActiveMap({ alerts, patrols, center: propCenter, showHeatmap = true }: MapProps) {
+export default function ActiveMap({ 
+  alerts, 
+  patrols, 
+  center: propCenter, 
+  showHeatmap = true,
+  onLocationSelect,
+  selectionLocation
+}: MapProps) {
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [isDownloaded, setIsDownloaded] = useState(false);
@@ -216,6 +225,38 @@ export default function ActiveMap({ alerts, patrols, center: propCenter, showHea
         <ChangeView center={mapCenter} zoom={zoom} />
         
         <MyLocationButton />
+        
+        {/* Selection Marker */}
+        {onLocationSelect && selectionLocation && (
+          <Marker 
+            position={[selectionLocation.lat, selectionLocation.lng]} 
+            draggable={true}
+            eventHandlers={{
+              dragend: (e) => {
+                const marker = e.target;
+                const position = marker.getLatLng();
+                onLocationSelect(position.lat, position.lng);
+              },
+            }}
+            icon={L.divIcon({
+              className: 'custom-div-icon',
+              html: `<div class="relative flex items-center justify-center">
+                <div class="absolute w-12 h-12 bg-info/30 rounded-full animate-pulse"></div>
+                <div class="z-10 text-3xl drop-shadow-lg">📍</div>
+                <div class="absolute -bottom-8 bg-[#16191F]/90 text-white text-[8px] font-black px-2 py-1 rounded border border-info/30 whitespace-nowrap uppercase tracking-tighter">DRAG TO TARGET</div>
+              </div>`,
+              iconSize: [40, 40],
+              iconAnchor: [20, 20],
+            })}
+          >
+            <Popup className="dark-popup">
+              <div className="p-1">
+                <p className="font-bold text-info">Target Location</p>
+                <p className="text-[10px]">Drag this pin to the exact emergency site</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
         
         {/* Tactical Overlay */}
         <div className="absolute inset-0 pointer-events-none z-[400] opacity-20 overflow-hidden">

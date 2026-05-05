@@ -17,12 +17,14 @@
   --color-brand-bg: #0B0F19;
   --color-brand-card: #161B26;
   --color-emergency: #FF3B30;
+  --color-warning: #FF9500;
   --color-caution: #FFD60A;
   --color-success: #34C759;
   --color-info: #007AFF;
   
   --shadow-command: 0 0 20px 0 rgba(0, 0, 0, 0.5);
   --shadow-glow-red: 0 0 15px rgba(255, 59, 48, 0.3);
+  --shadow-glow-orange: 0 0 15px rgba(255, 149, 0, 0.3);
   --shadow-glow-amber: 0 0 15px rgba(255, 214, 10, 0.3);
 }
 

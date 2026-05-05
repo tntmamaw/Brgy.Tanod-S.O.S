@@ -19,6 +19,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import DispatchModal from './DispatchModal';
+import FlameAnimation from './FlameAnimation';
 import AboutModal from './AboutModal';
 import { InstallAppButton } from './InstallAppButton';
 import { TanodLogo } from './Branding';
@@ -376,9 +377,22 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
                       alert.status === 'pending' && "border-emergency/30 shadow-glow-red ring-1 ring-emergency/10"
                     )}
                   >
+                    {alert.status === 'pending' && alert.aiAnalysis && alert.aiAnalysis.severityScore >= 7 && (
+                      <div className="absolute -bottom-8 -right-8 opacity-10 pointer-events-none rotate-12 group-hover:opacity-20 transition-opacity">
+                        <FlameAnimation size="lg" />
+                      </div>
+                    )}
                     {alert.status === 'pending' && (
                       <div className="absolute top-0 right-0 w-24 h-24 overflow-hidden pointer-events-none">
-                        <div className="absolute top-4 -right-10 bg-emergency text-white text-[9px] font-black py-1 px-12 rotate-45 uppercase shadow-lg font-mono">CRITICAL</div>
+                        <div className={cn(
+                          "absolute top-4 -right-10 text-white text-[9px] font-black py-1 px-12 rotate-45 uppercase shadow-lg font-mono",
+                          alert.aiAnalysis && alert.aiAnalysis.severityScore > 7 ? "bg-emergency" : 
+                          alert.aiAnalysis && alert.aiAnalysis.severityScore >= 5 ? "bg-warning text-black" :
+                          "bg-caution text-black"
+                        )}>
+                          {alert.aiAnalysis && alert.aiAnalysis.severityScore > 7 ? 'CRITICAL' : 
+                           alert.aiAnalysis && alert.aiAnalysis.severityScore >= 5 ? 'HIGH' : 'NORMAL'}
+                        </div>
                       </div>
                     )}
 
@@ -405,6 +419,9 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
                             </div>
                             <p className="text-[10px] text-white/40 font-bold flex items-center gap-2 font-mono uppercase tracking-tight">
                               <MapPin className="w-3 h-3 text-emergency" /> SECTOR 7 • {new Date(alert.timestamp).toLocaleTimeString()}
+                              {(alert as any).isManualLocation && (
+                                <span className="text-[8px] bg-info/10 text-info px-1.5 py-0.5 rounded border border-info/20 ml-2">MANUAL_PIN</span>
+                              )}
                             </p>
                           </div>
                         </div>
@@ -413,22 +430,45 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
                           <p className="text-[8px] font-black text-white/40 uppercase tracking-[0.2em] mb-1 font-mono">Emergency Classification</p>
                           <p className="text-sm font-bold text-white uppercase italic tracking-tighter font-mono">{alert.type}</p>
                         </div>
+                        {alert.status === 'responding' && (alert.assignedToName || alert.respondedByName) && (
+                          <div className="flex items-center gap-2 mt-2 px-3 py-1.5 bg-info/5 rounded-xl border border-info/10">
+                            <Shield className="w-3 h-3 text-info" />
+                            <span className="text-[9px] font-black uppercase text-info/60 font-mono tracking-widest">Responder: {alert.assignedToName || alert.respondedByName}</span>
+                          </div>
+                        )}
+                        {alert.responderNotes && (
+                          <div className="mt-2 p-4 bg-info/5 border border-info/20 rounded-2xl">
+                             <p className="text-[8px] font-black text-info/60 uppercase tracking-[0.2em] mb-2 font-mono flex items-center gap-2">
+                               <Shield className="w-3 h-3" /> Latest Situation Report
+                             </p>
+                             <p className="text-xs text-white/90 font-mono italic leading-relaxed">
+                               <span className="text-info mr-2 opacity-50 font-black not-italic">&gt;&gt;</span>
+                               {alert.responderNotes}
+                             </p>
+                          </div>
+                        )}
                       </div>
 
                       {alert.aiAnalysis && (
                         <div className="flex-1 space-y-4">
                           <div className={cn(
                             "rounded-2xl p-4 border backdrop-blur-sm",
-                            alert.aiAnalysis.urgency === 'CRITICAL' ? "bg-emergency/5 border-emergency/20" : 
-                            alert.aiAnalysis.urgency === 'HIGH' ? "bg-caution/5 border-caution/20" :
-                            "bg-info/5 border-info/20"
+                            alert.aiAnalysis.severityScore > 7 ? "bg-emergency/5 border-emergency/20" : 
+                            alert.aiAnalysis.severityScore >= 5 ? "bg-warning/5 border-warning/20" :
+                            "bg-caution/5 border-caution/20"
                           )}>
                              <div className="flex justify-between items-center mb-3">
                                 <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em] font-mono">AI THREAT INTEL</p>
-                                <span className={cn(
-                                  "px-2 py-0.5 rounded-[4px] text-[8px] font-black font-mono",
-                                  alert.aiAnalysis.urgency === 'CRITICAL' ? "bg-emergency text-white" : "bg-caution text-black"
-                                )}>{alert.aiAnalysis.urgency}</span>
+                                <div className="flex items-center gap-2">
+                                  <span className={cn(
+                                    "px-2 py-0.5 rounded-[4px] text-[8px] font-black font-mono uppercase tracking-tighter shadow-sm",
+                                    alert.aiAnalysis.severityScore > 7 ? "bg-emergency text-white" : 
+                                    alert.aiAnalysis.severityScore >= 5 ? "bg-warning text-black" :
+                                    "bg-caution text-black"
+                                  )}>
+                                    {alert.aiAnalysis.severityScore > 7 ? 'CRITICAL' : alert.aiAnalysis.severityScore >= 5 ? 'HIGH_PRIORITY' : 'NORMAL_PRIORITY'}
+                                  </span>
+                                </div>
                              </div>
                              <p className="text-xs font-bold text-white/90 leading-relaxed mb-4 italic font-mono">"{alert.aiAnalysis.summary}"</p>
                              <div className="flex flex-wrap gap-2">
@@ -441,7 +481,15 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
                              <span className="text-[8px] font-black text-white/30 uppercase tracking-[0.3em] font-mono">Threat Severity</span>
                              <div className="flex gap-1">
                                 {[...Array(10)].map((_, i) => (
-                                  <div key={i} className={cn("w-2 h-4 rounded-sm transition-all", i < alert.aiAnalysis!.severityScore ? (alert.aiAnalysis!.severityScore > 7 ? 'bg-emergency shadow-glow-red' : 'bg-emergency/60') : 'bg-white/5')} />
+                                  <div 
+                                    key={i} 
+                                    className={cn(
+                                      "w-2 h-4 rounded-sm transition-all", 
+                                      i < alert.aiAnalysis!.severityScore 
+                                        ? (alert.aiAnalysis!.severityScore > 7 ? 'bg-emergency shadow-glow-red' : alert.aiAnalysis!.severityScore >= 5 ? 'bg-warning shadow-glow-orange' : 'bg-caution shadow-glow-amber') 
+                                        : 'bg-white/5'
+                                    )} 
+                                  />
                                 ))}
                              </div>
                           </div>
@@ -582,6 +630,7 @@ export default function AdminDashboard({ profile, onTabChange, deferredPrompt, o
         <DispatchModal 
           alert={selectedAlertForDispatch} 
           onClose={() => setSelectedAlertForDispatch(null)} 
+          patrols={patrols}
         />
       )}
       <InstallAppButton />

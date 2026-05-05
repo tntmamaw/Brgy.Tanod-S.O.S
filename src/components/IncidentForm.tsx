@@ -4,6 +4,7 @@ import { db, auth } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { User, IncidentStatus } from '../types';
 import { X, Send } from 'lucide-react';
+import AnimatedButton from './AnimatedButton';
 
 interface IncidentFormProps {
   profile: User;
@@ -20,9 +21,10 @@ export default function IncidentForm({ profile, onClose }: IncidentFormProps) {
     status: 'pending' as IncidentStatus
   });
   const [submitting, setSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!auth?.currentUser || !db) return;
     
     setSubmitting(true);
@@ -76,7 +78,10 @@ export default function IncidentForm({ profile, onClose }: IncidentFormProps) {
         console.error('Supabase incident sync failed:', supaErr);
       }
 
-      onClose();
+      setIsSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 1500);
     } catch (err) {
       console.error(err);
     } finally {
@@ -180,17 +185,19 @@ export default function IncidentForm({ profile, onClose }: IncidentFormProps) {
              <button 
               type="button"
               onClick={onClose}
-              className="flex-1 py-4 font-bold rounded-2xl border border-[#2D3139] hover:bg-[#252932] transition-colors"
+              className="flex-1 py-4 font-bold rounded-2xl border border-[#2D3139] hover:bg-[#252932] transition-colors uppercase text-[10px] tracking-widest font-mono"
              >
                 Cancel
              </button>
-             <button 
-              disabled={submitting}
+             <AnimatedButton 
               type="submit"
-              className="flex-1 py-4 bg-[#FF4B4B] text-white font-black italic rounded-2xl hover:scale-105 active:scale-95 transition-all flex items-center justify-center gap-2 shadow-xl"
-             >
-                {submitting ? 'FILING...' : <><Send className="w-5 h-5" /> FILE REPORT</>}
-             </button>
+              isLoading={submitting}
+              isSuccess={isSuccess}
+              onClick={() => {}} // form submit handles it
+              label="FILE REPORT"
+              successLabel="REPORT FILED"
+              className="flex-1"
+             />
           </div>
         </form>
       </div>

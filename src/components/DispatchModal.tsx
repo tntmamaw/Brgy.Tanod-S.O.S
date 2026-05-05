@@ -2,25 +2,32 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, onSnapshot, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
-import { User, Alert } from '../types';
+import { User, Alert, PatrolLocation } from '../types';
 import { X, Shield, Send } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 interface DispatchModalProps {
   alert: Alert;
   onClose: () => void;
+  patrols: PatrolLocation[];
 }
 
-export default function DispatchModal({ alert, onClose }: DispatchModalProps) {
+export default function DispatchModal({ alert, onClose, patrols }: DispatchModalProps) {
   const [tanods, setTanods] = useState<User[]>([]);
   const [selectedTanod, setSelectedTanod] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!db) return;
-    const q = query(collection(db, 'users'), where('role', '==', 'tanod'), where('status', '==', 'approved'));
+    // Query all tanods. We will filter status in memory to be more flexible.
+    const q = query(collection(db, 'users'), where('role', '==', 'tanod'));
     return onSnapshot(q, (snapshot) => {
-      setTanods(snapshot.docs.map(d => ({ uid: d.id, ...d.data() } as User)));
+      const allTanods = snapshot.docs.map(d => ({ uid: d.id, ...d.data() } as User));
+      // Filter for those who are approved and NOT currently responding
+      const available = allTanods.filter(t => 
+        t.status === 'approved' || t.status === 'On-Duty'
+      );
+      setTanods(available);
     });
   }, []);
 
@@ -31,6 +38,8 @@ export default function DispatchModal({ alert, onClose }: DispatchModalProps) {
       const tanod = tanods.find(t => t.uid === selectedTanod);
       const updateData = {
         status: 'responding' as const,
+        assignedTo: selectedTanod,
+        assignedToName: tanod?.name || 'Assigned Tanod',
         respondedBy: selectedTanod,
         respondedByName: tanod?.name || 'Assigned Tanod',
         respondedAt: new Date().toISOString()
@@ -115,7 +124,9 @@ export default function DispatchModal({ alert, onClose }: DispatchModalProps) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="font-black text-lg text-white uppercase italic tracking-tighter truncate">{tanod.name}</p>
-                  <p className="text-xs text-[#8E9299] font-bold uppercase tracking-widest">Active • Sector Alpha</p>
+                  <p className="text-xs text-[#8E9299] font-bold uppercase tracking-widest">
+                    {patrols.find(p => p.tanodId === tanod.uid)?.isActive ? 'Online • Tactical Signal Active' : 'Offline • Signal Lost'}
+                  </p>
                 </div>
                 <div className={cn(
                   "w-6 h-6 rounded-full border-4 flex items-center justify-center transition-all",

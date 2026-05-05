@@ -26,6 +26,8 @@ import {
   limit
 } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
+import { InstallAppButton } from './components/InstallAppButton';
+import TacticalCard from './components/TacticalCard';
 import { supabase } from './lib/supabase';
 import { User, Alert, UserRole, PatrolLocation, EmergencyType, ResidentProfile } from './types';
 import { 
@@ -61,7 +63,8 @@ import AboutModal from './components/AboutModal';
 import { Shift } from './types';
 import { format } from 'date-fns';
 import { queueSOS, removeQueuedSOS } from './lib/offlineQueue';
-import { InstallAppButton } from './components/InstallAppButton';
+import AnimatedButton from './components/AnimatedButton';
+import FlameAnimation from './components/FlameAnimation';
 import AdminResidents from './components/AdminResidents';
 import PatrolScheduler from './components/PatrolScheduler';
 import RegistrationForm from './components/RegistrationForm';
@@ -1012,6 +1015,18 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
   const [sosDescription, setSosDescription] = useState('');
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [sosSuccess, setSosSuccess] = useState(false);
+  const [manualLocation, setManualLocation] = useState<{ lat: number, lng: number } | null>(null);
+  const [gpsLocation, setGpsLocation] = useState<{ lat: number, lng: number, accuracy?: number } | null>(null);
+
+  useEffect(() => {
+    // Get initial GPS to center map if available
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setGpsLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
+      () => {},
+      { enableHighAccuracy: true }
+    );
+  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -1037,22 +1052,28 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
   }, [profile.uid]);
 
   const handleSOS = async (type: EmergencyType = 'other', description: string) => {
-    setSosTypeToSubmit(null);
-    setSosDescription('');
     setSending(true);
     try {
-      // 1. Get GPS with fallback
-      let pos: GeolocationPosition | null = null;
-      try {
-        pos = await new Promise<GeolocationPosition>((res, rej) => 
-          navigator.geolocation.getCurrentPosition(res, rej, { 
-            enableHighAccuracy: true, 
-            timeout: 5000, 
-            maximumAge: 0 
-          })
-        );
-      } catch (gpsErr) {
-        console.warn('GPS failed, proceeding with empty location', gpsErr);
+      // 1. Get GPS with fallback if manual is NOT set
+      let pos: { lat: number, lng: number, accuracy?: number } | null = manualLocation;
+      
+      if (!pos) {
+        try {
+          const gpsPos = await new Promise<GeolocationPosition>((res, rej) => 
+            navigator.geolocation.getCurrentPosition(res, rej, { 
+              enableHighAccuracy: true, 
+              timeout: 5000, 
+              maximumAge: 0 
+            })
+          );
+          pos = { 
+            lat: gpsPos.coords.latitude, 
+            lng: gpsPos.coords.longitude,
+            accuracy: gpsPos.coords.accuracy
+          };
+        } catch (gpsErr) {
+          console.warn('GPS failed, proceeding with empty location', gpsErr);
+        }
       }
 
       // 2. AI Analysis (optional for speed)
@@ -1063,11 +1084,7 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
         console.warn('AI analysis failed', aiErr);
       }
       
-      const locationObj: any = pos ? { 
-        lat: pos.coords.latitude, 
-        lng: pos.coords.longitude,
-        accuracy: pos.coords.accuracy
-      } : { lat: 0, lng: 0 }; // Fallback to placeholder or last known if we had a persistent state
+      const locationObj: any = pos || { lat: 13.2236, lng: 120.5960 }; // Default to Mamburao center
 
       const alertId = crypto.randomUUID();
       const alertData: any = {
@@ -1078,7 +1095,8 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
         location: locationObj,
         status: 'pending',
         timestamp: new Date().toISOString(),
-        aiAnalysis: aiAnalysis
+        aiAnalysis: aiAnalysis,
+        isManualLocation: !!manualLocation
       };
       
       if (profile?.phone) alertData.residentMobile = profile.phone;
@@ -1108,6 +1126,16 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
         queueSOS(alertData);
         toast.error('Offline Mode: Alert queued for sync.', { icon: '📡' });
       }
+      
+      // Clear manual location after success
+      setManualLocation(null);
+      setSosSuccess(true);
+      
+      setTimeout(() => {
+        setSosTypeToSubmit(null);
+        setSosDescription('');
+        setSosSuccess(false);
+      }, 1500);
     } catch (err: any) {
       handleFirestoreError(err, OperationType.WRITE, 'alerts');
       toast.error('Critical failure. Please call hotlines directly.');
@@ -1315,25 +1343,28 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
         </div>
         <div className="grid grid-cols-2 gap-4">
           {[
-            { name: 'Police (PNP)', number: '117', color: 'bg-info', icon: '🚨' },
-            { name: 'Fire (BFP)', number: '911', color: 'bg-caution', icon: '🔥' },
-            { name: 'Medical', number: '0917-SOS', color: 'bg-emergency', icon: '🚑' },
-            { name: 'Brgy. Hall', number: '123-4567', color: 'bg-success', icon: '🏢' },
+            { name: 'Police (PNP)', number: '117', color: 'bg-info', icon: '🚨', glow: 'rgba(56, 189, 248, 0.3)' },
+            { name: 'Fire (BFP)', number: '911', color: 'bg-caution', icon: '🔥', glow: 'rgba(251, 191, 36, 0.3)' },
+            { name: 'Medical', number: '0917-SOS', color: 'bg-emergency', icon: '🚑', glow: 'rgba(255, 59, 48, 0.3)' },
+            { name: 'Brgy. Hall', number: '123-4567', color: 'bg-success', icon: '🏢', glow: 'rgba(34, 197, 94, 0.3)' },
           ].map(c => (
-            <button 
-              key={c.name} 
+            <TacticalCard
+              key={c.name}
               onClick={() => window.location.href = `tel:${c.number}`}
-              className="flex flex-col items-center gap-3 p-6 glass-panel rounded-[32px] hover:border-white/20 hover:bg-white/5 transition-all group active:scale-95 shadow-lg"
+              glowColor={c.glow}
+              className="p-1"
             >
-              <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center mb-1 group-hover:scale-110 transition-transform shadow-xl text-2xl relative", c.color)}>
-                <div className="absolute inset-0 bg-white/20 rounded-2xl animate-pulse" />
-                <span className="z-10">{c.icon}</span>
+              <div className="flex flex-col items-center gap-3 p-6">
+                <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center mb-1 group-hover:scale-110 transition-transform shadow-xl text-2xl relative", c.color)}>
+                  <div className="absolute inset-0 bg-white/20 rounded-2xl animate-pulse" />
+                  <span className="z-10">{c.icon}</span>
+                </div>
+                <div className="text-center">
+                  <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] leading-none mb-1 font-mono">{c.name}</p>
+                  <p className="text-base font-black text-white italic tracking-tighter font-mono">{c.number}</p>
+                </div>
               </div>
-              <div className="text-center">
-                <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] leading-none mb-1 font-mono">{c.name}</p>
-                <p className="text-base font-black text-white italic tracking-tighter font-mono">{c.number}</p>
-              </div>
-            </button>
+            </TacticalCard>
           ))}
         </div>
       </motion.div>
@@ -1379,7 +1410,7 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
               <h3 className="font-black italic text-2xl md:text-3xl tracking-tighter text-white mb-2 uppercase text-center font-mono">Select Protocol</h3>
               <p className="text-white/40 text-xs font-bold mb-8 text-center uppercase tracking-[0.2em] font-mono">Mission-critical category required</p>
               
-              <div className="grid grid-cols-2 gap-4 mb-8">
+               <div className="grid grid-cols-2 gap-4 mb-8">
                 {(['medical', 'fire', 'crime', 'flood'] as EmergencyType[]).map(type => {
                   const getIcon = (t: string) => {
                     switch(t) {
@@ -1391,16 +1422,19 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
                     }
                   };
                   return (
-                     <button 
+                    <TacticalCard
                       key={type}
                       onClick={() => { setIsChoosingCategory(false); setSosTypeToSubmit(type); }}
-                      className="p-6 bg-brand-bg border border-white/5 rounded-[32px] hover:bg-emergency/10 hover:border-emergency transition-all group flex flex-col items-center shadow-lg active:scale-95"
+                      glowColor="rgba(255, 59, 48, 0.3)"
+                      className="p-1"
                     >
-                      <div className="w-20 h-20 bg-brand-card rounded-2xl flex items-center justify-center mb-4 group-hover:bg-emergency group-hover:shadow-glow-red transition-all text-4xl">
-                        <span className="group-hover:scale-110 transition-transform">{getIcon(type)}</span>
+                      <div className="p-6 flex flex-col items-center">
+                        <div className="w-16 h-16 bg-brand-card rounded-2xl flex items-center justify-center mb-4 group-hover:bg-emergency group-hover:shadow-glow-red transition-all text-3xl">
+                          <span className="group-hover:scale-110 transition-transform">{getIcon(type)}</span>
+                        </div>
+                        <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.3em] group-hover:text-white font-mono">{type}</p>
                       </div>
-                      <p className="text-[10px] font-black uppercase text-white/40 tracking-[0.3em] group-hover:text-white font-mono">{type}</p>
-                    </button>
+                    </TacticalCard>
                   );
                 })}
               </div>
@@ -1426,34 +1460,80 @@ function ResidentDashboard({ profile, patrols, isOnline, deferredPrompt, onInsta
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-[#16191F] border border-white/10 w-full max-w-md rounded-[40px] overflow-hidden shadow-2xl flex flex-col p-8 relative"
+              className="bg-[#16191F] border border-white/10 w-full max-w-2xl rounded-[40px] overflow-hidden shadow-2xl flex flex-col p-6 md:p-8 relative"
             >
+              <div className="absolute inset-0 pointer-events-none opacity-10 flex items-end justify-center">
+                <FlameAnimation size="lg" className="w-[80%] h-[60%]" />
+              </div>
               <div className="scanline" />
               <div className="absolute -top-24 -left-24 w-48 h-48 bg-info/20 blur-3xl" />
               
-              <h3 className="font-black italic text-2xl tracking-tighter text-white mb-2 uppercase font-mono">Situation Intel</h3>
-              <p className="text-white/40 text-[10px] font-black mb-8 uppercase tracking-[0.2em] font-mono leading-relaxed">Provide critical context for arriving Tanod units.</p>
+              <div className="flex flex-col lg:flex-row gap-6">
+                <div className="flex-1 space-y-6">
+                  <div>
+                    <h3 className="font-black italic text-2xl tracking-tighter text-white mb-2 uppercase font-mono">Situation Intel</h3>
+                    <p className="text-white/40 text-[10px] font-black mb-4 uppercase tracking-[0.2em] font-mono leading-relaxed">Provide critical context for arriving Tanod units.</p>
+                  </div>
+                  
+                  <textarea 
+                    value={sosDescription}
+                    onChange={(e) => setSosDescription(e.target.value)}
+                    placeholder="DETAILS: Location, nature, casualties..."
+                    className="w-full bg-brand-bg border border-white/5 rounded-3xl p-6 text-white placeholder:text-white/20 focus:outline-none focus:border-emergency min-h-[120px] font-mono text-sm leading-relaxed shadow-inner"
+                  />
+
+                  <div className="flex items-center justify-between p-4 bg-brand-bg/50 rounded-2xl border border-white/5">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("p-2 rounded-lg", manualLocation ? "bg-info/20 text-info" : "bg-white/5 text-white/20")}>
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase text-white/60 font-mono">Location Mode</p>
+                        <p className="text-[9px] font-bold text-white/30 truncate max-w-[120px]">
+                          {manualLocation ? 'MANUAL OVERRIDE' : 'LIVE GPS SYNC'}
+                        </p>
+                      </div>
+                    </div>
+                    {manualLocation && (
+                      <button 
+                        onClick={() => setManualLocation(null)}
+                        className="text-[8px] font-black text-emergency border border-emergency/20 px-2 py-1 rounded hover:bg-emergency/10"
+                      >
+                        RESET TO GPS
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex-1 min-h-[300px] flex flex-col gap-2">
+                   <p className="text-[10px] font-black uppercase text-white/30 tracking-widest ml-2">Tactical Map Override</p>
+                   <div className="flex-1 bg-brand-bg/50 rounded-3xl border border-white/5 overflow-hidden">
+                      <ActiveMap 
+                        alerts={[]} 
+                        patrols={patrols} 
+                        center={manualLocation ? [manualLocation.lat, manualLocation.lng] : gpsLocation ? [gpsLocation.lat, gpsLocation.lng] : undefined}
+                        onLocationSelect={(lat, lng) => setManualLocation({ lat, lng })}
+                        selectionLocation={manualLocation || gpsLocation}
+                      />
+                   </div>
+                </div>
+              </div>
               
-              <textarea 
-                value={sosDescription}
-                onChange={(e) => setSosDescription(e.target.value)}
-                placeholder="DETAILS: Location, nature, casualties..."
-                className="w-full bg-brand-bg border border-white/5 rounded-3xl p-6 text-white placeholder:text-white/20 mb-8 focus:outline-none focus:border-emergency min-h-[160px] font-mono text-sm leading-relaxed shadow-inner"
-              />
-              
-              <div className="flex gap-4">
+              <div className="flex gap-4 mt-8">
                 <button 
-                  onClick={() => { setSosTypeToSubmit(null); setSosDescription(''); }}
+                  onClick={() => { setSosTypeToSubmit(null); setSosDescription(''); setManualLocation(null); }}
                   className="flex-1 py-5 bg-brand-card border border-white/5 text-white/50 font-black rounded-2xl hover:text-white transition-all text-[10px] uppercase tracking-widest font-mono italic active:scale-95"
                 >
                   Cancel
                 </button>
-                <button 
+                <AnimatedButton 
+                  isLoading={sending}
+                  isSuccess={sosSuccess}
                   onClick={() => handleSOS(sosTypeToSubmit, sosDescription)}
-                  className="flex-[2] py-5 bg-emergency text-white font-black rounded-2xl hover:bg-red-600 transition-all text-[10px] uppercase tracking-widest font-mono italic shadow-glow-red active:scale-95"
-                >
-                  Transmit Alert
-                </button>
+                  label="Transmit Alert"
+                  successLabel="Alert Transmitted"
+                  className="flex-[2]"
+                />
               </div>
             </motion.div>
           </div>

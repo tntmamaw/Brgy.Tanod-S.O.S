@@ -3,22 +3,28 @@ import { collection, query, where, onSnapshot, orderBy, doc, updateDoc, addDoc, 
 import { db } from '../lib/firebase';
 import { supabase } from '../lib/supabase';
 import { Alert, User } from '../types';
-import { AlertTriangle, MapPin, Zap, CheckCircle, Shield, Volume2, VolumeX, Info, Filter, FilePlus } from 'lucide-react';
+import { AlertTriangle, MapPin, Zap, CheckCircle, Shield, Volume2, VolumeX, Info, Filter, FilePlus, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { PoliceLights } from './PoliceLights';
 import AboutModal from './AboutModal';
 import { InstallAppButton } from './InstallAppButton';
 import IncidentForm from './IncidentForm';
+import AnimatedButton from './AnimatedButton';
+import FlameAnimation from './FlameAnimation';
 
 import { useIncidentStore } from '../store/useIncidentStore';
 import { logIncidentAction } from '../services/logService';
 
 export default function TanodDashboard({ profile, onTabChange, deferredPrompt, onInstall, sirenActive, onToggleSiren }: { profile: User | null, onTabChange: (tab: string) => void, deferredPrompt?: any, onInstall?: () => void, sirenActive: boolean, onToggleSiren: () => void }) {
   const { alerts } = useIncidentStore();
-  const [isFlashing, setIsFlashing] = useState(false);
-  const [shiftLog, setShiftLog] = useState<Alert[]>([]);
   const [isAboutOpen, setIsAboutOpen] = useState(false);
+  const [isFlashing, setIsFlashing] = useState(false);
+  const [loadingAlertIds, setLoadingAlertIds] = useState<Set<string>>(new Set());
+  const [processedAlertIds, setProcessedAlertIds] = useState<Set<string>>(new Set());
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [noteText, setNoteText] = useState<string>('');
+  const [shiftLog, setShiftLog] = useState<Alert[]>([]);
   const [isReportFormOpen, setIsReportFormOpen] = useState(false);
 
   // Filtering State
@@ -43,22 +49,27 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
 
     // 2. Status Filter
     if (filterStatus === 'ACTIVE') {
-      if (alert.status === 'resolved' || alert.status === 'cancelled') return false;
+      if (['resolved', 'cancelled'].includes(alert.status)) return false;
     } else if (filterStatus !== 'ALL') {
-      if (alert.status !== filterStatus.toLowerCase()) return false;
+      if (alert.status.toLowerCase() !== filterStatus.toLowerCase()) return false;
     }
 
     // 3. Type Filter
-    const typeEnum: Record<string, string> = {
-      'MEDICAL': 'Medical Emergency',
-      'FIRE': 'Fire Alert',
-      'CRIME': 'Criminal Activity',
-      'DISASTER': 'Natural Disaster'
-    };
-    
     if (filterType !== 'ALL') {
-      const match = typeEnum[filterType] || filterType;
-      if (!alert.type.toUpperCase().includes(filterType) && alert.type !== match) return false;
+      const typeLower = filterType.toLowerCase();
+      const alertTypeLower = alert.type.toLowerCase();
+      
+      const typeEnum: Record<string, string[]> = {
+        'medical': ['medical', 'medical emergency'],
+        'fire': ['fire', 'fire alert'],
+        'crime': ['crime', 'criminal activity'],
+        'disaster': ['disaster', 'natural disaster']
+      };
+      
+      const aliases = typeEnum[typeLower] || [typeLower];
+      const isTypeMatch = aliases.some(alias => alertTypeLower.includes(alias));
+      
+      if (!isTypeMatch) return false;
     }
 
     // 4. Time Filter
@@ -109,6 +120,7 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
 
   const handleUpdateStatus = async (alert: Alert, status: Alert['status']) => {
     if (!db) return;
+    setLoadingAlertIds(prev => new Set(prev).add(alert.id));
     try {
       const updateData: any = { 
         status, 
@@ -119,13 +131,14 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
         updateData.respondedBy = profile?.uid || 'unknown';
         updateData.respondedByName = profile?.name || 'Tanod Unit';
         updateData.respondedAt = new Date().toISOString();
+        updateData.assignedTo = profile?.uid || 'unknown';
+        updateData.assignedToName = profile?.name || 'Tanod Unit';
       }
       
       if (status === 'resolved') {
         updateData.resolvedAt = new Date().toISOString();
         updateData.resolutionNotes = `Cleared by ${profile?.name || 'Tanod Responder'}`;
         
-        // Try to find an admin to assign as 'on duty'
         let adminName = 'Unknown Admin';
         try {
           const adminQuery = query(collection(db, 'users'), where('role', '==', 'admin'));
@@ -137,7 +150,6 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
           console.error('Failed to fetch admin');
         }
 
-        // Auto-create an incident log from this alert
         await addDoc(collection(db, 'incidents'), {
           alertId: alert.id,
           tanodId: profile?.uid || 'unknown',
@@ -147,7 +159,7 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
           location: alert.customMessage || 'Location via GPS',
           gpsLocation: alert.location,
           type: alert.type,
-          description: `Automatically created from a resolved alert.\nCitizen: ${alert.residentName}\nResponse note: ${updateData.resolutionNotes}`,
+          description: `Automatically created from a resolved alert.\nCitizen: ${alert.residentName}\nResponse note: ${updateData.resolutionNotes}${alert.responderNotes ? `\nResponder Situation Report: ${alert.responderNotes}` : ''}`,
           status: 'resolved',
           respondedAt: alert.respondedAt || updateData.respondedAt || new Date().toISOString(),
           resolvedAt: updateData.resolvedAt,
@@ -155,30 +167,25 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
         });
       }
 
-      // Use setDoc merge true to be robust against missing documents
       await setDoc(doc(db, 'alerts', alert.id), updateData, { merge: true });
 
-      // Update our status in the roster
       if (profile?.uid) {
         try {
-          // If resolved, go back to On-Duty, otherwise match alert status
-          const isResolved = updateData.status === 'resolved' || updateData.status === 'cancelled';
-          const newStatus = isResolved ? 'On-Duty' : updateData.status;
+          const userStatus = status === 'resolved' ? 'On-Duty' : status;
+          await updateDoc(doc(db, 'users', profile.uid), { 
+            status: userStatus,
+            activeAlertId: status === 'resolved' ? null : alert.id
+          });
           
-          const userUpdate: any = { status: newStatus };
-          if (isResolved) {
-            userUpdate.activeAlertId = null;
-          } else if (updateData.status === 'responding') {
-            userUpdate.activeAlertId = alert.id;
+          if (status === 'responding') {
+            setProcessedAlertIds(prev => new Set(prev).add(alert.id));
           }
-          
-          await setDoc(doc(db, 'users', profile.uid), userUpdate, { merge: true });
-        } catch (e) {
-          console.warn('[TanodDashboard] Failed to update Tanod roster status:', e);
+        } catch(e) {
+          console.error('Failed to update roster status:', e);
         }
       }
 
-      // Sync to Supabase (Robust update/insert)
+      // Sync to Supabase
       try {
         await supabase
           .from('report_logs')
@@ -190,18 +197,70 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
             location_lng: alert.location.lng,
             lat: alert.location.lat, 
             lng: alert.location.lng,
-            status: updateData.status,
+            status: status,
             tanod_id: profile?.uid || null 
           }]);
       } catch (suErr) {
         console.error('Supabase status sync failed:', suErr);
       }
       
-      // Log for audit
       await logIncidentAction({ ...alert, ...updateData });
     } catch (error: any) {
       console.error("Error updating alert:", error);
-      window.alert('Failed to update status.');
+    } finally {
+      setLoadingAlertIds(prev => {
+        const next = new Set(prev);
+        next.delete(alert.id);
+        return next;
+      });
+    }
+  };
+
+  const handleRejectAlert = async (alert: Alert) => {
+    if (!db) return;
+    try {
+      const updateData: any = { 
+        status: 'pending', 
+        updatedAt: new Date().toISOString(),
+        assignedTo: null,
+        assignedToName: null,
+        respondedBy: null,
+        respondedByName: null,
+        respondedAt: null
+      };
+      
+      await setDoc(doc(db, 'alerts', alert.id), updateData, { merge: true });
+      
+      // Log the rejection
+      await logIncidentAction({ 
+        ...alert, 
+        ...updateData, 
+        resolutionNotes: `SOS assignment rejected by ${profile?.name || 'anonymous tanod'}` 
+      });
+
+      // Clear tanod active alert if they were assigned
+      if (profile?.uid) {
+        await setDoc(doc(db, 'users', profile.uid), { 
+          activeAlertId: null,
+          status: 'On-Duty'
+        }, { merge: true });
+      }
+    } catch (e) {
+      console.error('Failed to reject alert:', e);
+    }
+  };
+
+  const handleSaveResponderNote = async (alertId: string) => {
+    if (!db) return;
+    try {
+      await updateDoc(doc(db, 'alerts', alertId), {
+        responderNotes: noteText,
+        updatedAt: new Date().toISOString()
+      });
+      setEditingNoteId(null);
+      setNoteText('');
+    } catch (e) {
+      console.error('Failed to save note:', e);
     }
   };
 
@@ -415,11 +474,35 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
                     key={alert.id}
                     className={cn(
                       "glass-panel border-white/5 rounded-[32px] p-6 relative overflow-hidden transition-all group",
-                      alert.status === 'pending' && "border-emergency/30 shadow-glow-red ring-1 ring-emergency/10 bg-emergency/5",
+                      alert.status === 'pending' && (
+                        alert.aiAnalysis && alert.aiAnalysis.severityScore > 7 ? "border-emergency/50 shadow-glow-red bg-emergency/5" :
+                        alert.aiAnalysis && alert.aiAnalysis.severityScore >= 5 ? "border-warning/50 shadow-glow-orange bg-warning/5" :
+                        "border-emergency/30 shadow-glow-red ring-1 ring-emergency/10 bg-emergency/5"
+                      ),
                       alert.status === 'responding' && "border-info/30 shadow-lg bg-info/5"
                     )}
                   >
                     <div className="scanline opacity-10" />
+                    
+                    {alert.status === 'pending' && alert.aiAnalysis && alert.aiAnalysis.severityScore >= 7 && (
+                      <div className="absolute -bottom-8 -right-8 opacity-20 pointer-events-none rotate-12 group-hover:opacity-30 transition-opacity">
+                        <FlameAnimation size="lg" />
+                      </div>
+                    )}
+
+                    {alert.status === 'pending' && (
+                      <div className="absolute top-0 right-0 w-24 h-24 overflow-hidden pointer-events-none z-[100]">
+                        <div className={cn(
+                          "absolute top-4 -right-10 text-white text-[9px] font-black py-1 px-12 rotate-45 uppercase shadow-lg font-mono",
+                          alert.aiAnalysis && alert.aiAnalysis.severityScore > 7 ? "bg-emergency" : 
+                          alert.aiAnalysis && alert.aiAnalysis.severityScore >= 5 ? "bg-warning text-black" :
+                          "bg-caution text-black"
+                        )}>
+                          {alert.aiAnalysis && alert.aiAnalysis.severityScore > 7 ? 'CRITICAL' : 
+                           alert.aiAnalysis && alert.aiAnalysis.severityScore >= 5 ? 'HIGH' : 'NORMAL'}
+                        </div>
+                      </div>
+                    )}
                     
                     <div className="flex flex-col md:flex-row gap-6 md:gap-8 relative z-10">
                       <div className="flex-1 space-y-4">
@@ -443,6 +526,14 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
                             <p className="text-[10px] text-white/40 font-bold flex items-center gap-2 font-mono uppercase tracking-[0.1em]">
                               <MapPin className="w-3 h-3 text-emergency" /> TRANSMISSION T+{Math.floor((Date.now() - new Date(alert.timestamp).getTime()) / 60000)}M • {new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                             </p>
+                            {alert.assignedTo === profile?.uid && alert.status === 'pending' && (
+                              <div className="mt-3 px-3 py-2 bg-emergency/10 border border-emergency/30 rounded-xl flex items-center gap-2">
+                                <Shield className="w-4 h-4 text-emergency animate-pulse" />
+                                <div>
+                                  <p className="text-[9px] font-black uppercase text-emergency tracking-tighter font-mono">Designated for SOS</p>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                         
@@ -473,6 +564,98 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
                             {alert.customMessage}
                           </div>
                         )}
+
+                        {alert.aiAnalysis && (
+                          <div className={cn(
+                            "rounded-2xl p-4 border backdrop-blur-sm",
+                            alert.aiAnalysis.severityScore > 7 ? "bg-emergency/5 border-emergency/20" : 
+                            alert.aiAnalysis.severityScore >= 5 ? "bg-warning/5 border-warning/20" :
+                            "bg-caution/5 border-caution/20"
+                          )}>
+                             <div className="flex justify-between items-center mb-2">
+                                <p className="text-[9px] font-black text-white/40 uppercase tracking-[0.2em] font-mono">Priority Intelligence</p>
+                                <span className={cn(
+                                    "px-2 py-0.5 rounded-[4px] text-[8px] font-black font-mono uppercase tracking-tighter shadow-sm",
+                                    alert.aiAnalysis.severityScore > 7 ? "bg-emergency text-white" : 
+                                    alert.aiAnalysis.severityScore >= 5 ? "bg-warning text-black" :
+                                    "bg-caution text-black"
+                                  )}>
+                                    {alert.aiAnalysis.severityScore > 7 ? 'CRITICAL' : alert.aiAnalysis.severityScore >= 5 ? 'HIGH' : 'NORMAL'}
+                                  </span>
+                             </div>
+                             <p className="text-xs font-bold text-white/90 leading-tight italic font-mono">"{alert.aiAnalysis.summary}"</p>
+                             <div className="flex gap-1 mt-3">
+                                {[...Array(10)].map((_, i) => (
+                                  <div 
+                                    key={i} 
+                                    className={cn(
+                                      "h-1.5 flex-1 rounded-full transition-all",
+                                      i < alert.aiAnalysis!.severityScore 
+                                        ? (alert.aiAnalysis!.severityScore > 7 ? 'bg-emergency' : alert.aiAnalysis!.severityScore >= 5 ? 'bg-warning' : 'bg-caution')
+                                        : 'bg-white/5'
+                                    )} 
+                                  />
+                                ))}
+                             </div>
+                          </div>
+                        )}
+
+                        {/* Responder Notes Section */}
+                        {alert.status === 'responding' && (
+                          <div className="bg-info/5 rounded-2xl p-4 border border-info/20 shadow-inner">
+                            <div className="flex items-center justify-between mb-3">
+                              <p className="text-[9px] font-black text-info/60 uppercase tracking-[0.2em] font-mono flex items-center gap-2">
+                                <Shield className="w-3 h-3" /> Tactical Responder Notes
+                              </p>
+                              {editingNoteId !== alert.id ? (
+                                <button 
+                                  onClick={() => {
+                                    setEditingNoteId(alert.id);
+                                    setNoteText(alert.responderNotes || '');
+                                  }}
+                                  className="text-[8px] font-black text-info hover:text-white transition-colors underline uppercase font-mono"
+                                >
+                                  {alert.responderNotes ? 'Edit Note' : 'Add Note'}
+                                </button>
+                              ) : (
+                                <button 
+                                  onClick={() => setEditingNoteId(null)}
+                                  className="text-[8px] font-black text-white/40 hover:text-white transition-colors uppercase font-mono"
+                                >
+                                  Cancel
+                                </button>
+                              )}
+                            </div>
+
+                            {editingNoteId === alert.id ? (
+                              <div className="space-y-3">
+                                <textarea
+                                  value={noteText}
+                                  onChange={(e) => setNoteText(e.target.value)}
+                                  placeholder="Enter mission updates, casualties, or required reinforcements..."
+                                  className="w-full bg-brand-bg/50 border border-info/30 rounded-xl p-3 text-xs text-white placeholder:text-white/20 font-mono outline-none focus:border-info min-h-[80px]"
+                                />
+                                <button
+                                  onClick={() => handleSaveResponderNote(alert.id)}
+                                  className="w-full py-2 bg-info text-white text-[9px] font-black rounded-lg hover:bg-info/80 transition-all uppercase tracking-widest font-mono"
+                                >
+                                  Update Situation Report
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-white/80 font-mono italic leading-relaxed">
+                                {alert.responderNotes ? (
+                                  <>
+                                    <span className="text-info mr-2 opacity-50 font-black not-italic">&gt;&gt;</span>
+                                    {alert.responderNotes}
+                                  </>
+                                ) : (
+                                  <span className="text-white/20 italic">No situation report entered yet. Intelligence missing.</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div className="flex flex-col gap-3 shrink-0 justify-center">
@@ -484,14 +667,23 @@ export default function TanodDashboard({ profile, onTabChange, deferredPrompt, o
                         >
                           <MapPin className="w-4 h-4 text-emergency" /> INITIALIZE GPS
                         </a>
-                        
                         {alert.status === 'pending' && (
-                          <button 
-                            onClick={() => handleUpdateStatus(alert, 'responding')}
-                            className="flex-1 py-5 px-10 bg-emergency text-white text-[10px] font-black rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-glow-red uppercase tracking-[0.2em] font-mono select-none italic"
-                          >
-                            DEPLOY RESPONDS
-                          </button>
+                          <div className="flex gap-2">
+                             <AnimatedButton 
+                                onClick={() => handleUpdateStatus(alert, 'responding')}
+                                isLoading={loadingAlertIds.has(alert.id)}
+                                isSuccess={processedAlertIds.has(alert.id)}
+                                label="ACCEPT SOS"
+                                successLabel="ACCEPTED"
+                                className="flex-1 bg-success shadow-glow-green"
+                              />
+                              <button 
+                                onClick={() => handleRejectAlert(alert)}
+                                className="py-5 px-6 bg-white/5 border border-white/10 text-white/40 text-[10px] font-black rounded-2xl hover:bg-emergency/10 hover:text-emergency hover:border-emergency/30 transition-all uppercase tracking-[0.2em] font-mono select-none flex items-center justify-center gap-2"
+                              >
+                                <X className="w-4 h-4" /> REJECT
+                              </button>
+                          </div>
                         )}
                         {alert.status === 'responding' && alert.respondedBy === profile?.uid && (
                           <button 

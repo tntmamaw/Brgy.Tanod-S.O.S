@@ -1,5 +1,5 @@
 export type UserRole = 'resident' | 'tanod' | 'admin' | 'superadmin' | 'guest';
-export type RegistryStatus = 'pending' | 'approved' | 'rejected';
+export type RegistryStatus = 'pending' | 'approved' | 'rejected' | 'On-Duty' | 'responding' | 'Offline';
 export type AlertStatus = 'pending' | 'responding' | 'resolved' | 'cancelled';
 export type IncidentStatus = 'pending' | 'ongoing' | 'resolved' | 'referred';
 export type EmergencyType = 'medical' | 'fire' | 'crime' | 'natural_disaster' | 'other' | 'violence' | 'flood';
@@ -60,12 +60,15 @@ export interface Alert {
   };
   status: AlertStatus;
   timestamp: string;
+  isManualLocation?: boolean;
   assignedTo?: string;
+  assignedToName?: string;
   respondedBy?: string;
   respondedByName?: string;
   respondedAt?: string;
   resolvedAt?: string;
   resolutionNotes?: string;
+  responderNotes?: string;
   aiAnalysis?: {
     incidentType: string;
     severityScore: number;
