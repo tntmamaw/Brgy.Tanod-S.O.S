@@ -146,32 +146,49 @@ export default function AboutModal({ isOpen, onClose, role }: AboutModalProps) {
             <div className="p-8 max-h-[70vh] overflow-y-auto custom-scrollbar space-y-10">
               
               {/* Mission and Vision - Enhanced Tactical Box */}
-              <section className="relative">
-                <div className="absolute -inset-1 bg-gradient-to-r from-brand-red/20 to-orange-500/10 rounded-[32px] blur-xl opacity-30 animate-pulse" />
-                <div className="relative p-8 rounded-[32px] bg-white/[0.03] border border-white/10 backdrop-blur-xl overflow-hidden group">
-                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:opacity-10 transition-opacity">
-                    <Zap className="w-20 h-20 text-brand-red" />
+              <section className="relative group">
+                <div className="absolute -inset-1.5 bg-gradient-to-r from-brand-red/40 via-orange-500/20 to-brand-red/40 rounded-[35px] blur-2xl opacity-20 group-hover:opacity-40 transition-opacity duration-1000 animate-pulse" />
+                <div className="relative p-10 rounded-[35px] bg-white/[0.04] border border-white/20 backdrop-blur-2xl overflow-hidden shadow-2xl">
+                  {/* Decorative background element */}
+                  <div className="absolute -bottom-10 -right-10 opacity-5 group-hover:rotate-12 transition-transform duration-1000">
+                    <Shield className="w-48 h-48 text-brand-red" />
                   </div>
                   
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.4em] text-brand-red mb-6 font-mono flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-brand-red animate-ping" />
-                    Mission and Vision
-                  </h3>
-                  
-                  <p className="text-xl md:text-2xl text-white font-black italic tracking-tighter leading-tight uppercase font-mono">
-                    "To bridge the critical gap between citizens in distress and local barangay responders through <span className="text-brand-red drop-shadow-[0_0_10px_rgba(239,68,68,0.5)]">real-time coordination</span>, fostering a safer, more resilient, and highly responsive Philippine community."
-                  </p>
-                  
-                  <div className="mt-6 flex items-center gap-4 border-t border-white/5 pt-6">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-success/20 border border-success/40 flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 rounded-full bg-success" />
-                      </div>
-                      <span className="text-[8px] font-mono text-white/40 uppercase tracking-widest">System Online</span>
+                  <div className="flex items-center justify-between mb-8">
+                    <h3 className="text-[12px] font-black uppercase tracking-[0.5em] text-brand-red font-mono flex items-center gap-3">
+                      <span className="relative flex h-3 w-3">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-red opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-red"></span>
+                      </span>
+                      Mission and Vision
+                    </h3>
+                    <div className="flex gap-1">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="w-1.5 h-1.5 rounded-full bg-brand-red/20 border border-brand-red/40" />
+                      ))}
                     </div>
-                    <div className="flex items-center gap-2 text-brand-red/60">
-                      <Shield className="w-3 h-3" />
-                      <span className="text-[8px] font-mono uppercase tracking-widest font-black">Philippine Priority</span>
+                  </div>
+                  
+                  <div className="relative">
+                    <Quote className="absolute -top-6 -left-6 w-12 h-12 text-white/5 -rotate-12" />
+                    <p className="text-2xl md:text-3xl text-white font-black italic tracking-tighter leading-[1.1] uppercase font-mono drop-shadow-sm">
+                      "To bridge the critical gap between citizens in distress and local barangay responders through <span className="text-brand-red relative">
+                        real-time coordination
+                        <span className="absolute bottom-0 left-0 w-full h-[2px] bg-brand-red/50 shadow-[0_0_10px_rgba(239,68,68,0.8)]" />
+                      </span>, fostering a safer, more resilient, and highly responsive Philippine community."
+                    </p>
+                  </div>
+                  
+                  <div className="mt-10 flex flex-wrap items-center gap-6 border-t border-white/10 pt-8">
+                    <div className="flex items-center gap-3">
+                      <div className="w-4 h-4 rounded-full bg-success/20 border border-success/40 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
+                      </div>
+                      <span className="text-[10px] font-bold font-mono text-white/60 uppercase tracking-[0.2em]">Operational Status: Active</span>
+                    </div>
+                    <div className="flex items-center gap-3 py-1.5 px-4 rounded-full bg-brand-red/10 border border-brand-red/30">
+                      <Shield className="w-3.5 h-3.5 text-brand-red" />
+                      <span className="text-[10px] font-mono uppercase tracking-[0.2em] font-black text-white/80">PH Resilience Standard</span>
                     </div>
                   </div>
                 </div>
