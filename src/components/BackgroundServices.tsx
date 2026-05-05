@@ -58,13 +58,17 @@ export default function BackgroundServices() {
             } else if (status === 'CHANNEL_ERROR') {
               const transportError = err?.message?.includes('transport failure') || !err;
               const is1006 = err?.message?.includes('1006') || err?.code === 1006 || String(err).includes('1006');
-              if (!is1006) {
-                console.error(`❌ Tactical Link Error (CHANNEL_ERROR):`, err);
-              } else {
+              const isNormalClosure = err?.message?.includes('1000') || err?.code === 1000 || String(err).includes('1000');
+              
+              if (isNormalClosure) {
+                console.log('📡 Tactical Link: Connection closed normally (1000).');
+              } else if (is1006) {
                 console.warn(`⏳ Tactical Link reconnecting (1006)...`);
+              } else {
+                console.error(`❌ Tactical Link Error (CHANNEL_ERROR):`, err);
               }
               
-              if (transportError) {
+              if (transportError && !isNormalClosure) {
                 console.warn('💡 TROUBLESHOOTING "transport failure":');
                 console.warn('1. API KEY: Ensure you are using the "Publishable/anon" key, NOT the "service_role" key.');
                 console.warn('2. URL: Ensure VITE_SUPABASE_URL starts with https:// and has NO trailing slash.');
@@ -141,7 +145,11 @@ export default function BackgroundServices() {
             console.log('✅ Supabase Real-time: Connected (System Events)');
           } else if (status === 'CHANNEL_ERROR') {
             const is1006 = err?.message?.includes('1006') || err?.code === 1006 || String(err).includes('1006');
-            if (!is1006) {
+            const isNormalClosure = err?.message?.includes('1000') || err?.code === 1000 || String(err).includes('1000');
+            
+            if (isNormalClosure) {
+              console.log('📡 Supabase Real-time: Connection closed normally (1000/System Events).');
+            } else if (!is1006) {
               console.error('❌ Supabase Real-time Error (System Events):', err);
             }
           }
